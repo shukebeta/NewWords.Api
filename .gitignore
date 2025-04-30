@@ -63,6 +63,7 @@ nunit-*.xml
 riderModule.iml
 /_ReSharper.Caches/
 .fake
-HappyNotes.Api.sln.DotSettings.user
+NewWords.Api.sln.DotSettings.user
 appsettings.Local.json
+appsettings.Development.json
 .vscode
