@@ -26,8 +26,8 @@ namespace NewWords.Api.Models.DTOs.User
         public string CurrentLearningLanguage { get; set; } = string.Empty;
 
         /// <summary>
-        /// Timestamp when the user account was created.
+        /// Timestamp when the user account was created (Unix timestamp as long).
         /// </summary>
-        public DateTime CreatedAt { get; set; }
+        public long CreatedAt { get; set; }
     }
 }

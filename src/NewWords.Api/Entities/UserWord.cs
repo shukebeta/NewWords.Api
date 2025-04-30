@@ -38,10 +38,10 @@ namespace NewWords.Api.Entities
         public WordStatus Status { get; set; } = WordStatus.New;
 
         /// <summary>
-        /// Timestamp when the user added this word to their list. Required.
+        /// Timestamp when the user added this word to their list (Required, Unix timestamp as long).
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public DateTime AddedAt { get; set; } = DateTime.UtcNow;
+        public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start), renamed to CreatedAt for consistency
 
         // --- Navigation Properties (Optional but recommended for ORM convenience) ---
 

@@ -2,6 +2,8 @@ using NewWords.Api.Models.DTOs.User;
 using NewWords.Api.Entities;
 using SqlSugar;
 using System.Threading.Tasks;
+using Api.Framework.Models;
+using System.Linq;
 
 namespace NewWords.Api.Services
 {
@@ -51,6 +53,26 @@ namespace NewWords.Api.Services
             var result = await _userRepository.UpdateAsync(user);
 
             return result; // Returns true if update was successful
+        }
+
+        public async Task<PageData<UserProfileDto>> GetPagedUsersAsync(int pageSize, int pageNumber, bool isAsc = false)
+        {
+            var userPageData = await _userRepository.GetPagedUsersAsync(pageSize, pageNumber, isAsc);
+            var dtoPageData = new PageData<UserProfileDto>
+            {
+                PageIndex = userPageData.PageIndex,
+                PageSize = userPageData.PageSize,
+                TotalCount = userPageData.TotalCount,
+                DataList = userPageData.DataList?.Select(user => new UserProfileDto
+                {
+                    UserId = user.UserId,
+                    Email = user.Email,
+                    NativeLanguage = user.NativeLanguage,
+                    CurrentLearningLanguage = user.CurrentLearningLanguage,
+                    CreatedAt = user.CreatedAt
+                }).ToList() ?? new List<UserProfileDto>()
+            };
+            return dtoPageData;
         }
     }
 }

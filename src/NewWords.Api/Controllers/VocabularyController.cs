@@ -26,20 +26,17 @@ namespace NewWords.Api.Controllers
         /// <param name="addDto">The word details to add.</param>
         /// <returns>The added word details.</returns>
         [HttpPost]
-        [ProducesResponseType(typeof(UserWordDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> AddUserWord([FromBody] AddWordRequestDto addDto)
+        public async Task<ApiResult<UserWordDto>> AddUserWord([FromBody] AddWordRequestDto addDto)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return Unauthorized(new FailedResult("Invalid user ID."));
+            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<UserWordDto>(default, "Invalid user ID.");
 
             var resultDto = await _vocabService.AddWordAsync(userId, addDto);
             if (resultDto == null)
             {
-                return BadRequest(new FailedResult("Failed to add word."));
+                return new FailedResult<UserWordDto>(default, "Failed to add word.");
             }
-            return Ok(new SuccessfulResult<UserWordDto>(resultDto, "Word added successfully."));
+            return new SuccessfulResult<UserWordDto>(resultDto, "Word added successfully.");
         }
 
         /// <summary>
@@ -50,19 +47,17 @@ namespace NewWords.Api.Controllers
         /// <param name="pageSize">Number of items per page.</param>
         /// <returns>Paginated list of user words.</returns>
         [HttpGet]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> GetUserWords([FromQuery] WordStatus? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<ApiResult<object>> GetUserWords([FromQuery] WordStatus? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return Unauthorized(new FailedResult("Invalid user ID."));
+            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<object>(default, "Invalid user ID.");
 
             pageSize = Math.Clamp(pageSize, 1, 50);
 
             var words = await _vocabService.GetUserWordsAsync(userId, status, page, pageSize);
             var totalCount = await _vocabService.GetUserWordsCountAsync(userId, status);
 
-            return Ok(new SuccessfulResult<object>(new { TotalCount = totalCount, Page = page, PageSize = pageSize, Items = words }, "User words retrieved successfully."));
+            return new SuccessfulResult<object>(new { TotalCount = totalCount, Page = page, PageSize = pageSize, Items = words }, "User words retrieved successfully.");
         }
 
         /// <summary>
@@ -71,16 +66,13 @@ namespace NewWords.Api.Controllers
         /// <param name="userWordId">The ID of the word to retrieve.</param>
         /// <returns>Details of the specified word.</returns>
         [HttpGet("{userWordId:int}")]
-        [ProducesResponseType(typeof(UserWordDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> GetUserWordDetails(int userWordId)
+        public async Task<ApiResult<UserWordDto>> GetUserWordDetails(int userWordId)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return Unauthorized(new FailedResult("Invalid user ID."));
+            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<UserWordDto>(default, "Invalid user ID.");
 
             var wordDetails = await _vocabService.GetUserWordDetailsAsync(userId, userWordId);
-            return wordDetails == null ? NotFound(new FailedResult("Word not found.")) : Ok(new SuccessfulResult<UserWordDto>(wordDetails, "Word details retrieved successfully."));
+            return wordDetails == null ? new FailedResult<UserWordDto>(default, "Word not found.") : new SuccessfulResult<UserWordDto>(wordDetails, "Word details retrieved successfully.");
         }
 
         /// <summary>
@@ -90,21 +82,17 @@ namespace NewWords.Api.Controllers
         /// <param name="updateDto">The new status for the word.</param>
         /// <returns>Confirmation of status update.</returns>
         [HttpPut("{userWordId:int}/status")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> UpdateUserWordStatus(int userWordId, [FromBody] UpdateWordStatusRequestDto updateDto)
+        public async Task<ApiResult<string>> UpdateUserWordStatus(int userWordId, [FromBody] UpdateWordStatusRequestDto updateDto)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return Unauthorized(new FailedResult("Invalid user ID."));
+            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<string>(default, "Invalid user ID.");
 
             var success = await _vocabService.UpdateWordStatusAsync(userId, userWordId, updateDto.NewStatus);
             if (!success)
             {
-                return NotFound(new FailedResult("Word entry not found or update failed."));
+                return new FailedResult<string>(default, "Word entry not found or update failed.");
             }
-            return Ok(new SuccessfulResult<string>("Word status updated successfully."));
+            return new SuccessfulResult<string>("Word status updated successfully.");
         }
 
         /// <summary>
@@ -113,20 +101,17 @@ namespace NewWords.Api.Controllers
         /// <param name="userWordId">The ID of the word to delete.</param>
         /// <returns>Confirmation of deletion.</returns>
         [HttpDelete("{userWordId:int}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> DeleteUserWord(int userWordId)
+        public async Task<ApiResult<string>> DeleteUserWord(int userWordId)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return Unauthorized(new FailedResult("Invalid user ID."));
+            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<string>(default, "Invalid user ID.");
 
             var success = await _vocabService.DeleteWordAsync(userId, userWordId);
             if (!success)
             {
-                return NotFound(new FailedResult("Word entry not found or delete failed."));
+                return new FailedResult<string>(default, "Word entry not found or delete failed.");
             }
-            return Ok(new SuccessfulResult<string>("Word deleted successfully."));
+            return new SuccessfulResult<string>("Word deleted successfully.");
         }
     }
 }

@@ -40,7 +40,13 @@ namespace NewWords.Api.Entities
         /// Consider using .NET Secret Manager, environment variables, or a dedicated secrets service.
         /// This field is included per the initial design but should be handled securely. Nullable.
         /// </summary>
-        [SugarColumn(IsNullable = true)]
+        [SugarColumn(IsNullable = true, Length = 1024)]
         public string? ApiKey { get; set; } // Nullable, handle secure storage separately
+
+        /// <summary>
+        /// Timestamp when the configuration was created (Required, Unix timestamp as long).
+        /// </summary>
+        [SugarColumn(IsNullable = false)]
+        public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start)
     }
 }

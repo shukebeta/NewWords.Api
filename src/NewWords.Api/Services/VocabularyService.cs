@@ -58,11 +58,12 @@ namespace NewWords.Api.Services
                     WordLanguage = wordLanguage,
                     UserNativeLanguage = userNativeLanguage,
                     // LLM fields are initially null
+                    CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
                 };
                 await _wordRepository.InsertAsync(wordEntry);
                 needsGeneration = true;
             }
-            else if (wordEntry.GeneratedAt == null)
+            else if (string.IsNullOrEmpty(wordEntry.Definitions) && string.IsNullOrEmpty(wordEntry.Examples) && string.IsNullOrEmpty(wordEntry.Pronunciation))
             {
                 // Word exists but LLM data hasn't been generated yet (or failed previously)
                 needsGeneration = true; // Potentially re-trigger generation
@@ -79,7 +80,7 @@ namespace NewWords.Api.Services
                     UserId = userId,
                     WordId = wordEntry.WordId,
                     Status = WordStatus.New,
-                    AddedAt = DateTime.UtcNow
+                    CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
                 };
                 await _userWordRepository.InsertAsync(userWordEntry);
             }
@@ -115,14 +116,14 @@ namespace NewWords.Api.Services
                         UserWordId = uw.UserWordId,
                         WordId = uw.WordId,
                         Status = uw.Status,
-                        AddedAt = uw.AddedAt,
+                        AddedAt = DateTime.UnixEpoch.AddSeconds(uw.CreatedAt),
                         WordText = word.WordText,
                         WordLanguage = word.WordLanguage,
                         UserNativeLanguage = word.UserNativeLanguage,
                         Pronunciation = word.Pronunciation,
                         Definitions = word.Definitions,
                         Examples = word.Examples,
-                        GeneratedAt = word.GeneratedAt
+                        GeneratedAt = word.CreatedAt > 0 ? DateTime.UnixEpoch.AddSeconds(word.CreatedAt) : null
                     });
                 }
             }
@@ -155,14 +156,14 @@ namespace NewWords.Api.Services
                 UserWordId = userWord.UserWordId,
                 WordId = userWord.WordId,
                 Status = userWord.Status,
-                AddedAt = userWord.AddedAt,
+                AddedAt = DateTime.UnixEpoch.AddSeconds(userWord.CreatedAt),
                 WordText = word.WordText,
                 WordLanguage = word.WordLanguage,
                 UserNativeLanguage = word.UserNativeLanguage,
                 Pronunciation = word.Pronunciation,
                 Definitions = word.Definitions,
                 Examples = word.Examples,
-                GeneratedAt = word.GeneratedAt
+                GeneratedAt = word.CreatedAt > 0 ? DateTime.UnixEpoch.AddSeconds(word.CreatedAt) : null
             };
         }
 
@@ -191,14 +192,14 @@ namespace NewWords.Api.Services
                 UserWordId = uw.UserWordId,
                 WordId = uw.WordId,
                 Status = uw.Status,
-                AddedAt = uw.AddedAt,
+                AddedAt = DateTime.UnixEpoch.AddSeconds(uw.CreatedAt),
                 WordText = w.WordText,
                 WordLanguage = w.WordLanguage,
                 UserNativeLanguage = w.UserNativeLanguage,
                 Pronunciation = w.Pronunciation,
                 Definitions = w.Definitions,
                 Examples = w.Examples,
-                GeneratedAt = w.GeneratedAt
+                GeneratedAt = w.CreatedAt > 0 ? DateTime.UnixEpoch.AddSeconds(w.CreatedAt) : null
             };
         }
     }

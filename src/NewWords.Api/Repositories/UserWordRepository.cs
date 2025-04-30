@@ -32,7 +32,7 @@ namespace NewWords.Api.Repositories
             pageSize = System.Math.Clamp(pageSize, 1, 100);
 
             return await query
-                .OrderBy(uw => uw.AddedAt, OrderByType.Desc)
+                .OrderBy(uw => uw.CreatedAt, OrderByType.Desc)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();

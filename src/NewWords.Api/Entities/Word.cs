@@ -54,10 +54,10 @@ namespace NewWords.Api.Entities
         public string? Examples { get; set; }
 
         /// <summary>
-        /// Timestamp when the LLM data was successfully generated and saved. Nullable.
+        /// Timestamp when the word data was created (Required, Unix timestamp as long).
         /// </summary>
-        [SugarColumn(IsNullable = true)]
-        public DateTime? GeneratedAt { get; set; }
+        [SugarColumn(IsNullable = false)]
+        public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start)
 
         /// <summary>
         /// Identifier of the LLM model used for generation (e.g., "openai/gpt-3.5-turbo"). Nullable.

@@ -39,9 +39,9 @@ namespace NewWords.Api.Entities
         public string CurrentLearningLanguage { get; set; } = string.Empty;
 
         /// <summary>
-        /// Timestamp when the user account was created (Required).
+        /// Timestamp when the user account was created (Required, Unix timestamp as long).
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow; // Default to current UTC time
+        public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start)
     }
 }

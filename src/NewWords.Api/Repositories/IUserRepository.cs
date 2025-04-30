@@ -1,4 +1,5 @@
 using Api.Framework;
+using Api.Framework.Models;
 using NewWords.Api.Entities;
 using System.Threading.Tasks;
 
@@ -8,5 +9,6 @@ namespace NewWords.Api.Repositories
     {
         Task<User?> GetByIdAsync(int userId);
         Task<User?> GetByEmailAsync(string email);
+        Task<PageData<User>> GetPagedUsersAsync(int pageSize, int pageNumber, bool isAsc = false);
     }
 }

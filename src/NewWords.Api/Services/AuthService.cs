@@ -42,7 +42,7 @@ namespace NewWords.Api.Services
                 PasswordHash = passwordHash,
                 NativeLanguage = registerDto.NativeLanguage,
                 CurrentLearningLanguage = registerDto.LearningLanguage,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
             };
 
             // 4. Insert user into database
