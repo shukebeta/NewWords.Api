@@ -17,7 +17,6 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using NewWords.Api;
 using NewWords.Api.Services;
-using NLog.Web;
 using SqlSugar;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
@@ -29,7 +28,6 @@ var logger = LoggerFactory.Create(config =>
 }).CreateLogger("Program");
 
 var envName = builder.Environment.EnvironmentName;
-builder.Host.UseNLog();
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
