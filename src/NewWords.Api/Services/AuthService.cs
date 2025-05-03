@@ -9,6 +9,7 @@ using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System;
+using Api.Framework.Extensions;
 
 namespace NewWords.Api.Services
 {
@@ -42,7 +43,7 @@ namespace NewWords.Api.Services
                 PasswordHash = passwordHash,
                 NativeLanguage = registerDto.NativeLanguage,
                 CurrentLearningLanguage = registerDto.LearningLanguage,
-                CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
+                CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
             };
 
             // 4. Insert user into database
