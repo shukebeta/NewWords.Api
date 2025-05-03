@@ -6,7 +6,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using LLM.Configuration;
 using LLM.Models;
-using System.Net.Http.Headers; // Added for AuthenticationHeaderValue
+using System.Net.Http.Headers;
+using Api.Framework.Options; // Added for AuthenticationHeaderValue
 
 namespace LLM.Services
 {
@@ -102,17 +103,13 @@ namespace LLM.Services
             var scores = new List<LanguageScore>();
             try
             {
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                };
                 // Deserialize the full API response to extract the content field
-                var responseObj = JsonSerializer.Deserialize<OpenRouterResponse>(apiResponse, options);
-                if (responseObj?.Choices != null && responseObj.Choices.Count > 0)
+                var responseObj = JsonSerializer.Deserialize<OpenRouterResponse>(apiResponse, JsonOptions.CaseInsensitive);
+                if (responseObj?.Choices is {Count: > 0,})
                 {
                     var content = responseObj.Choices[0].Message.Content;
                     // Try to deserialize the content as plain JSON
-                    var languageResponse = JsonSerializer.Deserialize<LanguageResponse>(content, options);
+                    var languageResponse = JsonSerializer.Deserialize<LanguageResponse>(content, JsonOptions.CaseInsensitive);
                     if (languageResponse?.Languages != null)
                     {
                         scores.AddRange(languageResponse.Languages);

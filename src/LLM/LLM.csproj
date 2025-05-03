@@ -13,4 +13,8 @@
         <PackageReference Include="System.Net.Http.Json" Version="8.0.0" />
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\Api.Framework\Api.Framework.csproj" />
+    </ItemGroup>
+
 </Project>
