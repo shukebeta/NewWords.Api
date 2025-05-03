@@ -51,6 +51,7 @@ namespace LLM.Services
                 try
                 {
                     var response = await MakeApiRequestAsync(inputText, currentModel);
+                    response = response.Trim();
                     result.Languages = ParseLanguageScores(response);
                     return result;
                 }
@@ -71,13 +72,19 @@ namespace LLM.Services
 
         private async Task<string> MakeApiRequestAsync(string inputText, string model)
         {
-            var prompt = $"Analyze the following text and identify the language(s) it might belong to with confidence scores (0 to 1). Text: \"{inputText}\"";
+            var prompt = $"Analyze the following text and identify the language(s) it might belong to with confidence scores (0 to 1). Return the result in a structured JSON format. Text: \"{inputText}\"";
+            var sampleJson = @"{
+                ""languages"": [
+                    { ""language"": ""English"", ""score"": 0.99 },
+                    { ""language"": ""Spanish"", ""score"": 0.3 }
+                ]
+            }";
             var requestBody = new
             {
                 model = model,
                 messages = new[]
                 {
-                    new { role = "system", content = "You are a language detection expert." },
+                    new { role = "system", content = $"You are a language detection expert. Always respond with plain JSON string without wrapping it in code blocks or any other formatting. Here's a sample response format:\n{sampleJson}" },
                     new { role = "user", content = prompt }
                 }
             };
@@ -92,26 +99,30 @@ namespace LLM.Services
 
         private List<LanguageScore> ParseLanguageScores(string apiResponse)
         {
-            // This is a simplified parsing logic. In a real scenario, you would deserialize the JSON response
-            // and extract the language scores based on the expected format from OpenRouter's API.
-            // For now, we'll return dummy data as a placeholder.
-
             var scores = new List<LanguageScore>();
             try
             {
-                // Placeholder parsing logic
-                // In reality, you would use JsonSerializer.Deserialize to parse the response
-                // and extract the content from the "choices" array.
-                if (apiResponse.Contains("English"))
+                var options = new JsonSerializerOptions
                 {
-                    scores.Add(new LanguageScore { Language = "English", Score = 0.95 });
-                }
-                if (apiResponse.Contains("Spanish"))
+                    PropertyNameCaseInsensitive = true
+                };
+                // Deserialize the full API response to extract the content field
+                var responseObj = JsonSerializer.Deserialize<OpenRouterResponse>(apiResponse, options);
+                if (responseObj?.Choices != null && responseObj.Choices.Count > 0)
                 {
-                    scores.Add(new LanguageScore { Language = "Spanish", Score = 0.3 });
+                    var content = responseObj.Choices[0].Message.Content;
+                    // Try to deserialize the content as plain JSON
+                    var languageResponse = JsonSerializer.Deserialize<LanguageResponse>(content, options);
+                    if (languageResponse?.Languages != null)
+                    {
+                        scores.AddRange(languageResponse.Languages);
+                    }
+                    else
+                    {
+                        scores.Add(new LanguageScore { Language = "Unknown", Score = 0.0 });
+                    }
                 }
-                // Add more languages as needed based on response content
-                if (scores.Count == 0)
+                else
                 {
                     scores.Add(new LanguageScore { Language = "Unknown", Score = 0.0 });
                 }
@@ -123,6 +134,26 @@ namespace LLM.Services
             }
 
             return scores;
+        }
+
+        private class OpenRouterResponse
+        {
+            public List<Choice> Choices { get; set; } = new List<Choice>();
+        }
+
+        private class Choice
+        {
+            public Message Message { get; set; } = new Message();
+        }
+
+        private class Message
+        {
+            public string Content { get; set; } = string.Empty;
+        }
+
+        private class LanguageResponse
+        {
+            public List<LanguageScore> Languages { get; set; } = new List<LanguageScore>();
         }
     }
 }
