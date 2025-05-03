@@ -5,7 +5,7 @@ namespace NewWords.Api.Models.DTOs.Auth
     /// <summary>
     /// Data Transfer Object for user registration requests.
     /// </summary>
-    public class RegisterRequestDto
+    public class RegisterRequest
     {
         /// <summary>
         /// User's email address. Must be a valid email format.

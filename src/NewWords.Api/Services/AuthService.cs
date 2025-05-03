@@ -10,97 +10,81 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System;
 using Api.Framework.Extensions;
+using Api.Framework.Helper;
+using Api.Framework.Models;
+using WeihanLi.Extensions;
 
 namespace NewWords.Api.Services
 {
-    public class AuthService : IAuthService
+    public class AuthService(Repositories.IUserRepository userRepository, IConfiguration configuration)
+        : IAuthService
     {
-        private readonly Repositories.IUserRepository _userRepository;
-        private readonly IConfiguration _configuration;
-
-        public AuthService(Repositories.IUserRepository userRepository, IConfiguration configuration)
+        public async Task<string> RegisterAsync(RegisterRequest request, JwtConfig jwtConfig)
         {
-            _userRepository = userRepository;
-            _configuration = configuration;
-        }
+            if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+            {
+                throw new ArgumentException("Email or Password cannot be empty");
+            }
 
-        public async Task<bool> RegisterAsync(RegisterRequestDto registerDto)
-        {
-            // 1. Check if email already exists
-            var existingUser = await _userRepository.GetByEmailAsync(registerDto.Email);
+            if (string.IsNullOrWhiteSpace(request.LearningLanguage) || string.IsNullOrWhiteSpace(request.NativeLanguage))
+            {
+                throw new ArgumentException("Learning Language or native language cannot be empty");
+            }
+
+            request.Email = request.Email.Trim().ToLower();
+            var existingUser = await userRepository.GetByEmailAsync(request.Email);
             if (existingUser != null)
             {
-                return false; // Email already in use
+                throw new Exception($"This Email ({request.Email}) has already registered before");
             }
 
-            // 2. Hash the password
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password);
+            var gravatar = GravatarHelper.GetGravatarUrl(request.Email);
 
-            // 3. Create new user entity
+            var (salt, password) = CommonHelper.GetSaltedPassword(request.Password);
             var newUser = new User
             {
-                Email = registerDto.Email,
-                PasswordHash = passwordHash,
-                NativeLanguage = registerDto.NativeLanguage,
-                CurrentLearningLanguage = registerDto.LearningLanguage,
-                CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
+                Email = request.Email,
+                Gravatar = gravatar,
+                Salt = salt,
+                PasswordHash = password,
+                NativeLanguage = request.NativeLanguage,
+                CurrentLearningLanguage = request.LearningLanguage,
+                CreatedAt = DateTime.Now.ToUnixTimeSeconds(),
             };
 
-            // 4. Insert user into database
-            var result = await _userRepository.InsertAsync(newUser);
-            return result; // Return true if insertion was successful
+            var id = await userRepository.InsertReturnIdentityAsync(newUser);
+
+            var claims = TokenHelper.ClaimsGenerator(id, id.ToString(), request.Email);
+            return TokenHelper.JwtTokenGenerator(claims, jwtConfig.Issuer, jwtConfig.SymmetricSecurityKey, jwtConfig.TokenExpiresInDays);
         }
 
-        public async Task<AuthResponseDto?> LoginAsync(LoginRequestDto loginDto)
+        public async Task<string> LoginAsync(LoginRequest loginRequest, JwtConfig jwtConfig)
         {
             // 1. Find user by email
-            var user = await _userRepository.GetByEmailAsync(loginDto.Email);
+            var user = await userRepository.GetByEmailAsync(loginRequest.Email);
             if (user == null)
             {
-                return null; // User not found
+                throw new Exception("User not found");
             }
 
-            // 2. Verify password
-            bool isPasswordValid = BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash);
-            if (!isPasswordValid)
+            var validateResult = await _IsValidLogin(loginRequest.Email, loginRequest.Password);
+            if (!validateResult)
             {
-                return null; // Invalid password
+                throw new Exception("Username or Password is incorrect");
             }
 
-            // 3. Generate JWT
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"]
-                ?? throw new InvalidOperationException("JWT Key not configured"));
-            var issuer = _configuration["Jwt:Issuer"]
-                ?? throw new InvalidOperationException("JWT Issuer not configured");
-            var audience = _configuration["Jwt:Audience"]
-                ?? throw new InvalidOperationException("JWT Audience not configured");
-
-            var tokenDescriptor = new SecurityTokenDescriptor
+            if (user.DeletedAt != null)
             {
-                Subject = new ClaimsIdentity(new[]
-                {
-                    new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()), // Standard subject claim (user ID)
-                    new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()), // Unique token identifier
-                    // Add other claims as needed (e.g., roles)
-                    // new Claim(ClaimTypes.Role, "User")
-                }),
-                Expires = DateTime.UtcNow.AddHours(1), // Token expiration (e.g., 1 hour) - make configurable?
-                Issuer = issuer,
-                Audience = audience,
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
+                throw new Exception("Sorry, your account has been deleted");
+            }
 
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var tokenString = tokenHandler.WriteToken(token);
-
-            // 4. Return response DTO
-            return new AuthResponseDto
-            {
-                Token = tokenString,
-                Expiration = tokenDescriptor.Expires.Value // Use the expiration from the descriptor
-            };
+            var claims = TokenHelper.ClaimsGenerator(user.UserId, user.UserId.ToString(), user.Email);
+            return TokenHelper.JwtTokenGenerator(claims, jwtConfig.Issuer, jwtConfig.SymmetricSecurityKey, jwtConfig.TokenExpiresInDays);
+        }
+        private async Task<bool> _IsValidLogin(string email, string password)
+        {
+            var user = await userRepository.GetFirstOrDefaultAsync(x => x.Email == email);
+            return user != null && user.PasswordHash.Equals(CommonHelper.CalculateSha256Hash(password + user.Salt));
         }
     }
 }

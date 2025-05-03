@@ -5,7 +5,7 @@ namespace NewWords.Api.Models.DTOs.Auth
     /// <summary>
     /// Data Transfer Object for user login requests.
     /// </summary>
-    public class LoginRequestDto
+    public class LoginRequest
     {
         /// <summary>
         /// User's email address.

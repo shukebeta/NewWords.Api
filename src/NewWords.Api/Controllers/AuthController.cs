@@ -1,44 +1,41 @@
+using Api.Framework.Models;
 using Microsoft.AspNetCore.Mvc;
 using NewWords.Api.Models.DTOs.Auth;
 using NewWords.Api.Services;
 using Api.Framework.Result;
-using NewWords.Api.Helpers;
-using EventId = NewWords.Api.Enums.EventId;
+using Microsoft.Extensions.Options;
 
-namespace NewWords.Api.Controllers
+namespace NewWords.Api.Controllers;
+
+public class AuthController(IAuthService authService, IOptions<JwtConfig> jwtConfig) : BaseController
 {
-    public class AuthController(IAuthService authService) : BaseController
-    {
-        /// <summary>
-        /// Registers a new user.
-        /// </summary>
-        /// <param name="registerDto">The registration details.</param>
-        /// <returns>Confirmation of registration.</returns>
-        [HttpPost]
-        public async Task<ApiResult> Register(RegisterRequestDto registerDto)
-        {
-            var success = await authService.RegisterAsync(registerDto);
-            if (!success)
-            {
-                return Fail("Registration failed. Email might already be in use.");
-            }
-            return Success("Registration successful.");
-        }
+    private readonly JwtConfig _jwtConfig = jwtConfig.Value;
 
-        /// <summary>
-        /// Logs in a user and returns a JWT token.
-        /// </summary>
-        /// <param name="loginDto">The login credentials.</param>
-        /// <returns>Authentication response with token.</returns>
-        [HttpPost]
-        public async Task<ApiResult<AuthResponseDto>> Login(LoginRequestDto loginDto)
+    /// <summary>
+    /// Registers a new user.
+    /// </summary>
+    /// <param name="register">The registration details.</param>
+    /// <returns>Jwt token if successful</returns>
+    [HttpPost]
+    public async Task<ApiResult<JwtToken>> Register(RegisterRequest register)
+    {
+        var token = await authService.RegisterAsync(register, _jwtConfig);
+        return new SuccessfulResult<JwtToken>(new JwtToken {Token = token,});
+    }
+
+    /// <summary>
+    /// Logs in a user and returns a JWT token.
+    /// </summary>
+    /// <param name="loginRequest">The login credentials.</param>
+    /// <returns>Jwt token if successful</returns>
+    [HttpPost]
+    public async Task<ApiResult<JwtToken>> Login(LoginRequest loginRequest)
+    {
+        if (string.IsNullOrWhiteSpace(loginRequest.Email) || string.IsNullOrWhiteSpace(loginRequest.Password))
         {
-            var authResponse = await authService.LoginAsync(loginDto);
-            if (authResponse == null)
-            {
-                throw ExceptionHelper.New(EventId._00100_LoginFailed);
-            }
-            return new SuccessfulResult<AuthResponseDto>(authResponse, "Login successful.");
+            throw new ArgumentException("Email or Password cannot be empty");
         }
+        var jwtToken = await authService.LoginAsync(loginRequest, _jwtConfig);
+        return new SuccessfulResult<JwtToken>(new JwtToken {Token = jwtToken,});
     }
 }

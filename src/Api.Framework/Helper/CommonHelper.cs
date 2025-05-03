@@ -23,8 +23,8 @@ public static class CommonHelper
         }
 
         return sb.ToString();
-    } 
- 
+    }
+
     public static string CalculateMd5Hash(string input)
     {
         // Use input string to calculate MD5 hash
@@ -42,4 +42,10 @@ public static class CommonHelper
         return sb.ToString().ToLower();
     }
 
+    public static (string salt, string password) GetSaltedPassword(string plainPassword)
+    {
+        var salt = SaltGenerator.GenerateSaltString(64);
+        var password = CalculateSha256Hash(plainPassword + salt);
+        return (salt, password);
+    }
 }
