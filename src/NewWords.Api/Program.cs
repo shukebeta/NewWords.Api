@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Api.Framework;
 using Api.Framework.Database;
+using Api.Framework.Exceptions;
 using Api.Framework.Extensions;
 using Api.Framework.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;

@@ -16,7 +16,7 @@ namespace NewWords.Api.Services
             _userRepository = userRepository;
         }
 
-        public async Task<UserProfileDto?> GetUserProfileAsync(int userId)
+        public async Task<UserProfileDto?> GetUserProfileAsync(long userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -36,7 +36,7 @@ namespace NewWords.Api.Services
             };
         }
 
-        public async Task<bool> UpdateUserProfileAsync(int userId, UpdateProfileRequestDto updateDto)
+        public async Task<bool> UpdateUserProfileAsync(long userId, UpdateProfileRequestDto updateDto)
         {
             // Find the user first
             var user = await _userRepository.GetByIdAsync(userId);

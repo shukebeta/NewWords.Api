@@ -7,13 +7,9 @@ using System.Linq.Expressions;
 
 namespace NewWords.Api.Repositories
 {
-    public class UserRepository : RepositoryBase<User>, IUserRepository
+    public class UserRepository(ISqlSugarClient dbClient) : RepositoryBase<User>(dbClient), IUserRepository
     {
-        public UserRepository(ISqlSugarClient dbClient) : base(dbClient)
-        {
-        }
-
-        public async Task<User?> GetByIdAsync(int userId)
+        public async Task<User?> GetByIdAsync(long userId)
         {
             return await GetSingleAsync(userId);
         }

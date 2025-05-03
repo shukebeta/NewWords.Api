@@ -23,7 +23,7 @@ namespace NewWords.Api.Entities
         /// Foreign key referencing the User. Required.
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public int UserId { get; set; }
+        public long UserId { get; set; }
 
         /// <summary>
         /// Foreign key referencing the specific Word explanation. Required.

@@ -1,11 +1,10 @@
 using System.Net;
-using Api.Framework.Exceptions;
 using Api.Framework.Result;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace Api.Framework;
+namespace Api.Framework.Exceptions;
 
 public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {

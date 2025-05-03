@@ -8,37 +8,28 @@ using Api.Framework.Models;
 
 namespace NewWords.Api.Controllers
 {
-    [ApiController]
-    [Route("api/users")]
     [Authorize]
-    public class UserController : ControllerBase
+    public class UserController(IUserService userService) : BaseController
     {
-        private readonly IUserService _userService;
-
-        public UserController(IUserService userService)
-        {
-            _userService = userService;
-        }
-
         /// <summary>
         /// Retrieves the current user's profile.
         /// </summary>
         /// <returns>User profile information.</returns>
-        [HttpGet("me")]
-        [ProducesResponseType(typeof(UserProfileDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(SuccessfulResult<UserProfileDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(FailedResult), StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(typeof(FailedResult), StatusCodes.Status404NotFound)]
-        public async Task<ApiResult<UserProfileDto>> GetMyProfile()
+        [HttpGet]
+        public async Task<ApiResult<UserProfileDto>> MyProfile()
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId))
+            if (!long.TryParse(userIdString, out var userId))
             {
-                return new FailedResult<UserProfileDto>(default, "Invalid user ID.");
+                throw new Exception("Invalid user ID.");
             }
 
-            var userProfile = await _userService.GetUserProfileAsync(userId);
-            return userProfile == null ? new FailedResult<UserProfileDto>(default, "User profile not found.") : new SuccessfulResult<UserProfileDto>(userProfile, "Profile retrieved successfully.");
+            var userProfile = await userService.GetUserProfileAsync(userId);
+            if (userProfile is null)
+            {
+                throw new Exception("User profile not found.");
+            }
+            return new SuccessfulResult<UserProfileDto>(userProfile, "Profile retrieved successfully.");
         }
 
         /// <summary>
@@ -46,22 +37,22 @@ namespace NewWords.Api.Controllers
         /// </summary>
         /// <param name="updateDto">The updated profile information.</param>
         /// <returns>Confirmation of update.</returns>
-        [HttpPut("me")]
-        public async Task<ApiResult<string>> UpdateMyProfile([FromBody] UpdateProfileRequestDto updateDto)
+        [HttpPut]
+        public async Task<ApiResult> UpdateMyProfile([FromBody] UpdateProfileRequestDto updateDto)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out var userId))
             {
-                return new FailedResult<string>(default, "Invalid user ID.");
+                throw new Exception("Invalid user ID.");
             }
 
-            var success = await _userService.UpdateUserProfileAsync(userId, updateDto);
+            var success = await userService.UpdateUserProfileAsync(userId, updateDto);
             if (!success)
             {
-                return new FailedResult<string>(default, "User profile not found or update failed.");
+                return Fail("User profile not found or update failed.");
             }
 
-            return new SuccessfulResult<string>("Profile updated successfully.");
+            return Success("Profile updated successfully.");
         }
 
         /// <summary>
@@ -75,12 +66,12 @@ namespace NewWords.Api.Controllers
         public async Task<ApiResult<PageData<UserProfileDto>>> GetUsers(int pageSize, int pageNumber)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId))
+            if (!long.TryParse(userIdString, out var userId))
             {
-                return new FailedResult<PageData<UserProfileDto>>(default, "Invalid user ID.");
+                throw new Exception("Invalid user ID.");
             }
 
-            var users = await _userService.GetPagedUsersAsync(pageSize, pageNumber);
+            var users = await userService.GetPagedUsersAsync(pageSize, pageNumber);
             return new SuccessfulResult<PageData<UserProfileDto>>(users, "Users retrieved successfully.");
         }
     }

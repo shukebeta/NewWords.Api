@@ -8,7 +8,7 @@ namespace NewWords.Api.Models.DTOs.User
         /// <summary>
         /// User's unique identifier.
         /// </summary>
-        public int UserId { get; set; }
+        public long UserId { get; set; }
 
         /// <summary>
         /// User's email address.

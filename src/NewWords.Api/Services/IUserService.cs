@@ -14,7 +14,7 @@ namespace NewWords.Api.Services
         /// </summary>
         /// <param name="userId">The ID of the user whose profile to retrieve.</param>
         /// <returns>A UserProfileDto if the user is found, otherwise null.</returns>
-        Task<UserProfileDto?> GetUserProfileAsync(int userId);
+        Task<UserProfileDto?> GetUserProfileAsync(long userId);
 
         /// <summary>
         /// Updates the profile information for a specific user.
@@ -22,7 +22,7 @@ namespace NewWords.Api.Services
         /// <param name="userId">The ID of the user whose profile to update.</param>
         /// <param name="updateDto">The data to update.</param>
         /// <returns>True if the update was successful, false otherwise (e.g., user not found).</returns>
-        Task<bool> UpdateUserProfileAsync(int userId, UpdateProfileRequestDto updateDto);
+        Task<bool> UpdateUserProfileAsync(long userId, UpdateProfileRequestDto updateDto);
 
         /// <summary>
         /// Retrieves a paginated list of user profiles.
