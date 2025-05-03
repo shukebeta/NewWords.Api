@@ -7,7 +7,7 @@ namespace LLM.Configuration
     /// <summary>
     /// Service for managing LLM configurations, including model lists and API keys.
     /// </summary>
-    public class LLMConfigurationService
+    public class LlmConfigurationService
     {
         private readonly IConfiguration _configuration;
         private readonly string _apiProvider;
@@ -15,10 +15,10 @@ namespace LLM.Configuration
         private readonly List<string> _models;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LLMConfigurationService"/> class.
+        /// Initializes a new instance of the <see cref="LlmConfigurationService"/> class.
         /// </summary>
         /// <param name="configuration">The configuration instance to read settings from.</param>
-        public LLMConfigurationService(IConfiguration configuration)
+        public LlmConfigurationService(IConfiguration configuration)
         {
             _configuration = configuration;
             var agents = _configuration.GetSection("Agents").Get<List<AgentConfig>>();
@@ -54,18 +54,12 @@ namespace LLM.Configuration
         /// <returns>The next model in the list if available; otherwise, an empty string.</returns>
         public string GetFallbackModel(string currentModel)
         {
-            if (string.IsNullOrEmpty(currentModel) || !_models.Contains(currentModel))
-            {
-                return GetPrimaryModel();
-            }
-
             var index = _models.IndexOf(currentModel);
             if (index < _models.Count - 1)
             {
                 return _models[index + 1];
             }
-
-            return string.Empty;
+            return GetPrimaryModel();
         }
 
         /// <summary>

@@ -57,7 +57,7 @@ builder.Services.AddScoped<NewWords.Api.Repositories.IUserRepository, NewWords.A
 builder.Services.AddScoped<NewWords.Api.Repositories.IWordRepository, NewWords.Api.Repositories.WordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IUserWordRepository, NewWords.Api.Repositories.UserWordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.ILlmConfigurationRepository, NewWords.Api.Repositories.LlmConfigurationRepository>();
-builder.Services.AddScoped<LLM.Configuration.LLMConfigurationService>();
+builder.Services.AddScoped<LLM.Configuration.LlmConfigurationService>();
 builder.Services.AddScoped<LLM.Services.LanguageRecognitionService>();
 builder.Services.AddScoped<LLM.Services.TranslationAndExplanationService>();
 builder.Services.AddHttpClient<LLM.Services.LanguageRecognitionService>();

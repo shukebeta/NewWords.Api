@@ -16,7 +16,7 @@ namespace LLM.Services
     public class TranslationAndExplanationService
     {
         private readonly HttpClient _httpClient;
-        private readonly LLMConfigurationService _configService;
+        private readonly LlmConfigurationService _configService;
         private readonly string _apiUrl = "https://openrouter.ai/api/v1/chat/completions";
 
         /// <summary>
@@ -24,7 +24,7 @@ namespace LLM.Services
         /// </summary>
         /// <param name="httpClient">The HTTP client for making API requests.</param>
         /// <param name="configService">The configuration service for accessing API settings.</param>
-        public TranslationAndExplanationService(HttpClient httpClient, LLMConfigurationService configService)
+        public TranslationAndExplanationService(HttpClient httpClient, LlmConfigurationService configService)
         {
             _httpClient = httpClient;
             _configService = configService;

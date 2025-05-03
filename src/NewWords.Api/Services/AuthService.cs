@@ -16,7 +16,7 @@ using WeihanLi.Extensions;
 
 namespace NewWords.Api.Services
 {
-    public class AuthService(Repositories.IUserRepository userRepository, IConfiguration configuration)
+    public class AuthService(Repositories.IUserRepository userRepository)
         : IAuthService
     {
         public async Task<string> RegisterAsync(RegisterRequest request, JwtConfig jwtConfig)

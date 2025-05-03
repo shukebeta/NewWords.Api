@@ -17,7 +17,7 @@ namespace LLM.Services
     public class LanguageRecognitionService
     {
         private readonly HttpClient _httpClient;
-        private readonly LLMConfigurationService _configService;
+        private readonly LlmConfigurationService _configService;
         private readonly string _apiUrl = "https://openrouter.ai/api/v1/chat/completions";
 
         /// <summary>
@@ -25,7 +25,7 @@ namespace LLM.Services
         /// </summary>
         /// <param name="httpClient">The HTTP client for making API requests.</param>
         /// <param name="configService">The configuration service for accessing API settings.</param>
-        public LanguageRecognitionService(HttpClient httpClient, LLMConfigurationService configService)
+        public LanguageRecognitionService(HttpClient httpClient, LlmConfigurationService configService)
         {
             _httpClient = httpClient;
             _configService = configService;
@@ -45,7 +45,7 @@ namespace LLM.Services
             }
 
             var result = new LanguageRecognitionResult { InputText = inputText };
-            string currentModel = _configService.GetPrimaryModel();
+            var currentModel = _configService.GetPrimaryModel();
 
             while (!string.IsNullOrEmpty(currentModel))
             {
@@ -53,7 +53,7 @@ namespace LLM.Services
                 {
                     var response = await MakeApiRequestAsync(inputText, currentModel);
                     response = response.Trim();
-                    result.Languages = ParseLanguageScores(response);
+                    result.Languages = _ParseLanguageScores(response);
                     return result;
                 }
                 catch (Exception ex)
@@ -98,7 +98,7 @@ namespace LLM.Services
             return responseContent;
         }
 
-        private List<LanguageScore> ParseLanguageScores(string apiResponse)
+        private static List<LanguageScore> _ParseLanguageScores(string apiResponse)
         {
             var scores = new List<LanguageScore>();
             try
@@ -135,7 +135,7 @@ namespace LLM.Services
 
         private class OpenRouterResponse
         {
-            public List<Choice> Choices { get; set; } = new List<Choice>();
+            public List<Choice> Choices { get; set; } = new();
         }
 
         private class Choice
@@ -150,7 +150,7 @@ namespace LLM.Services
 
         private class LanguageResponse
         {
-            public List<LanguageScore> Languages { get; set; } = new List<LanguageScore>();
+            public List<LanguageScore> Languages { get; set; } = new();
         }
     }
 }
