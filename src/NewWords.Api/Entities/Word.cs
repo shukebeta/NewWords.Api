@@ -60,9 +60,9 @@ namespace NewWords.Api.Entities
         public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start)
 
         /// <summary>
-        /// Identifier of the LLM model used for generation (e.g., "openai/gpt-3.5-turbo"). Nullable.
+        /// Identifier of the LLM model used for generation (e.g., "openrouter:meta-llama/llama-4-scout:free"). Nullable.
         /// </summary>
-        [SugarColumn(IsNullable = true, Length = 100)] // Added length
-        public string? GeneratingLlm { get; set; }
+        [SugarColumn(IsNullable = true, Length = 100)]
+        public string? ProviderModelName { get; set; }
     }
 }

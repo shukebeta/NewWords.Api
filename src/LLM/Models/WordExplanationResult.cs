@@ -13,6 +13,11 @@ namespace LLM.Models
         public string InputText { get; set; } = string.Empty;
 
         /// <summary>
+        /// The language of the input text as recognized by the system.
+        /// </summary>
+        public string TextLanguage { get; set; } = string.Empty;
+
+        /// <summary>
         /// The International Phonetic Alphabet (IPA) transcription of the word or phrase.
         /// </summary>
         public string IpaTranscription { get; set; } = string.Empty;
@@ -36,6 +41,11 @@ namespace LLM.Models
         /// A detailed explanation of the word or phrase in the target language.
         /// </summary>
         public string DetailedExplanation { get; set; } = string.Empty;
+
+        /// <summary>
+        /// A markdown-formatted explanation including all details for direct display to the user.
+        /// </summary>
+        public string ExplanationInMarkdown { get; set; } = string.Empty;
 
         /// <summary>
         /// Example sentences in the original language with translations in the target language.
@@ -75,9 +85,9 @@ namespace LLM.Models
         public string Term { get; set; } = string.Empty;
 
         /// <summary>
-        /// The International Phonetic Alphabet (IPA) transcription of the term, if available.
+        /// The International Phonetic Alphabet (IPA) transcription(s) of the term, if available.
         /// </summary>
-        public string IpaTranscription { get; set; } = string.Empty;
+        public string IpaTranscription { get; set; } = string.Empty; // Changed from List<string> to string
 
         /// <summary>
         /// The part of speech of the term (e.g., noun, adjective).
