@@ -43,11 +43,6 @@ namespace LLM.Models
         public string DetailedExplanation { get; set; } = string.Empty;
 
         /// <summary>
-        /// A markdown-formatted explanation including all details for direct display to the user.
-        /// </summary>
-        public string ExplanationInMarkdown { get; set; } = string.Empty;
-
-        /// <summary>
         /// Example sentences in the original language with translations in the target language.
         /// </summary>
         public List<ExampleSentence> ExampleSentences { get; set; } = new List<ExampleSentence>();

@@ -186,10 +186,8 @@ The explanation MUST follow this structure exactly:
 
         private async Task<string> _MakeStructuredApiRequestAsync(string inputText, string targetLanguage, string model)
         {
-             // User prompt focuses on the *content* required, EXCLUDING markdown.
-            var userPrompt = $"Generate a detailed linguistic analysis JSON object for the input text: \"{inputText}\". Provide the analysis in {targetLanguage}. Include ONLY the following components: 1. Recognized language of the input text ('textLanguage'). 2. IPA transcription ('ipaTranscription'). 3. Part of speech ('partOfSpeech'). 4. Primary translation ('primaryTranslation'). 5. Alternative translations ('alternativeTranslations', array). 6. Detailed explanation ('detailedExplanation'). 7. Example sentences with translations ('exampleSentences', array of objects with 'original' and 'translation'). 8. Related vocabulary terms ('relatedTerms', array of objects with 'term', 'ipaTranscription', 'partOfSpeech', 'meaning'). DO NOT include an 'explanationInMarkdown' field.";
+            var userPrompt = $"Generate a detailed linguistic analysis JSON object for the input text: \"{inputText}\". Provide the analysis in {targetLanguage}. Include ONLY the following components: 1. Recognized language of the input text ('textLanguage'). 2. IPA transcription ('ipaTranscription'). 3. Part of speech ('partOfSpeech'). 4. Primary translation ('primaryTranslation'). 5. Alternative translations ('alternativeTranslations', array). 6. Detailed explanation ('detailedExplanation'). 7. Example sentences with translations ('exampleSentences', array of objects with 'original' and 'translation'). 8. Related vocabulary terms ('relatedTerms', array of objects with 'term', 'ipaTranscription', 'partOfSpeech', 'meaning'). ";
 
-            // Example JSON structure WITHOUT the markdown field
             var sampleJson = @"{
                 ""inputText"": ""bargain hunters"",
                 ""textLanguage"": ""English"",
@@ -200,7 +198,7 @@ The explanation MUST follow this structure exactly:
                 ""detailedExplanation"": ""Description here..."",
                 ""exampleSentences"": [ { ""original"": ""Sentence 1"", ""translation"": ""Translation 1"" } ],
                 ""relatedTerms"": [ { ""term"": ""term1"", ""ipaTranscription"": ""ipa1"", ""partOfSpeech"": ""pos1"", ""meaning"": ""meaning1"" } ]
-            }"; // Note: explanationInMarkdown is removed
+            }";
 
             // System prompt focuses on persona and *format* constraints.
             var systemPrompt = $@"You are a linguistic expert specializing in detailed word/phrase analysis and translation.
@@ -209,7 +207,7 @@ Your task is to generate ONLY a valid JSON object containing the linguistic anal
 **Response Format Constraints:**
 1.  **MUST respond ONLY with a valid JSON object.**
 2.  **Do NOT include any text, explanations, or formatting (like ```json ... ```) before or after the JSON object.**
-3.  The JSON object MUST contain ONLY the fields requested in the user prompt, matching the structure shown in the example. DO NOT include 'explanationInMarkdown'.
+3.  The JSON object MUST contain ONLY the fields requested in the user prompt, matching the structure shown in the example.
 4.  All fields should contain plain text or the specified JSON structures (arrays/objects).
 5.  **CRITICAL JSON Escaping Rules:**
     *   All string values within the JSON MUST be properly escaped according to JSON standards.
@@ -217,7 +215,7 @@ Your task is to generate ONLY a valid JSON object containing the linguistic anal
     *   Ensure newlines within strings are escaped as `\\\\n`.
     *   Ensure double quotes within strings are escaped as `\\\\""`.
 
-**Example JSON Structure (No Markdown Field):**
+**Example JSON Structure:**
 ```json
 {sampleJson}
 ```
@@ -310,14 +308,12 @@ Remember: Your entire response must be ONLY the JSON object, starting with `{{` 
                     if (explanationResult != null)
                     {
                         // Deserialization successful (either first or second attempt)
-                        // Populate the result object. ExplanationInMarkdown will be empty/null by default.
                         result.TextLanguage = string.IsNullOrEmpty(explanationResult.TextLanguage) ? "Unknown" : explanationResult.TextLanguage;
                         result.IpaTranscription = explanationResult.IpaTranscription;
                         result.PartOfSpeech = explanationResult.PartOfSpeech;
                         result.PrimaryTranslation = explanationResult.PrimaryTranslation;
                         result.AlternativeTranslations = explanationResult.AlternativeTranslations;
                         result.DetailedExplanation = explanationResult.DetailedExplanation;
-                        // result.ExplanationInMarkdown is NOT set here
                         result.ExampleSentences = explanationResult.ExampleSentences;
                         result.RelatedTerms = explanationResult.RelatedTerms;
                         return result; // Successfully parsed
