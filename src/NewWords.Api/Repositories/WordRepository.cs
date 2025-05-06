@@ -13,7 +13,7 @@ namespace NewWords.Api.Repositories
 
         public async Task<Word?> GetByTextAndLanguageAsync(string wordText, string wordLanguage, string userNativeLanguage)
         {
-            return await GetFirstOrDefaultAsync(w => w.WordText == wordText && w.WordLanguage == wordLanguage && w.UserNativeLanguage == userNativeLanguage);
+            return await GetFirstOrDefaultAsync(w => w.WordText == wordText && w.WordLanguage == wordLanguage && w.ExplanationLanguage == userNativeLanguage);
         }
     }
 }

@@ -47,7 +47,7 @@ namespace NewWords.Api.Services
                 {
                     WordText = wordText,
                     WordLanguage = wordLanguage,
-                    UserNativeLanguage = userNativeLanguage,
+                    ExplanationLanguage = userNativeLanguage,
                     // LLM fields are initially null
                     CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
                 };
@@ -110,7 +110,7 @@ namespace NewWords.Api.Services
                         AddedAt = DateTime.UnixEpoch.AddSeconds(uw.CreatedAt),
                         WordText = word.WordText,
                         WordLanguage = word.WordLanguage,
-                        UserNativeLanguage = word.UserNativeLanguage,
+                        UserNativeLanguage = word.ExplanationLanguage,
                         Pronunciation = word.Pronunciation,
                         Definitions = word.Definitions,
                         Examples = word.Examples,
@@ -150,7 +150,7 @@ namespace NewWords.Api.Services
                 AddedAt = DateTime.UnixEpoch.AddSeconds(userWord.CreatedAt),
                 WordText = word.WordText,
                 WordLanguage = word.WordLanguage,
-                UserNativeLanguage = word.UserNativeLanguage,
+                UserNativeLanguage = word.ExplanationLanguage,
                 Pronunciation = word.Pronunciation,
                 Definitions = word.Definitions,
                 Examples = word.Examples,
@@ -186,7 +186,7 @@ namespace NewWords.Api.Services
                 AddedAt = DateTime.UnixEpoch.AddSeconds(uw.CreatedAt),
                 WordText = w.WordText,
                 WordLanguage = w.WordLanguage,
-                UserNativeLanguage = w.UserNativeLanguage,
+                UserNativeLanguage = w.ExplanationLanguage,
                 Pronunciation = w.Pronunciation,
                 Definitions = w.Definitions,
                 Examples = w.Examples,

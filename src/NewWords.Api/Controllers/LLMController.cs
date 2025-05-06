@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using LLM.Services;
 using Api.Framework.Result;
-using System.Threading.Tasks;
 using LLM.Models;
 using Microsoft.AspNetCore.Authorization;
+using NewWords.Api.Repositories; // Added
+using SqlSugar; // Added
+using NewWords.Api.Entities; // Added
 
 namespace NewWords.Api.Controllers;
 
@@ -15,18 +17,34 @@ public class LlmController : BaseController
 {
     private readonly LanguageRecognitionService _languageRecognitionService;
     private readonly TranslationAndExplanationService _translationAndExplanationService;
+    private readonly ISqlSugarClient _dbClient; // Added
+    private readonly IWordRepository _wordRepository; // Added
+    private readonly IWordCollectionRepository _wordCollectionRepository; // Added
+    private readonly ILogger<LlmController> _logger; // Added
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LlmController"/> class.
     /// </summary>
     /// <param name="languageRecognitionService">The service for language recognition.</param>
     /// <param name="translationAndExplanationService">The service for word explanations and translations.</param>
+    /// <param name="dbClient">The SQLSugar client.</param>
+    /// <param name="wordRepository">The repository for Words.</param>
+    /// <param name="wordCollectionRepository">The repository for WordCollection.</param>
+    /// <param name="logger">The logger instance.</param>
     public LlmController(
         LanguageRecognitionService languageRecognitionService,
-        TranslationAndExplanationService translationAndExplanationService)
+        TranslationAndExplanationService translationAndExplanationService,
+        ISqlSugarClient dbClient, // Added
+        IWordRepository wordRepository, // Added
+        IWordCollectionRepository wordCollectionRepository, // Added
+        ILogger<LlmController> logger) // Added
     {
         _languageRecognitionService = languageRecognitionService;
         _translationAndExplanationService = translationAndExplanationService;
+        _dbClient = dbClient; // Added
+        _wordRepository = wordRepository; // Added
+        _wordCollectionRepository = wordCollectionRepository; // Added
+        _logger = logger; // Added
     }
 
     /// <summary>
@@ -88,13 +106,21 @@ public class LlmController : BaseController
             return Fail("Target language parameter is required.");
         }
 
-        // Call the new service method for Markdown
-        var markdownResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage);
-        // Return as plain text for easy viewing/testing, or wrap in ApiResult if preferred
-        // return Content(markdownResult, "text/markdown"); // Option 1: Return raw markdown
-        return new SuccessfulResult<string>(markdownResult); // Option 2: Wrap in standard ApiResult
-    }
-
+        
+                // Call the new service method for Markdown (returns nullable tuple)
+                var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage);
+        
+                if (explanationResult.HasValue)
+                {
+                    // Return the Markdown part if successful
+                    return new SuccessfulResult<string>(explanationResult.Value.Markdown);
+                }
+                else
+                {
+                    // Return failure if the service couldn't get the explanation after retries
+                    return Fail($"Could not retrieve explanation for '{text}' after multiple attempts.");
+                }
+            }
     /// <summary>
     /// Provides structured linguistic details (IPA, translations, etc.) for the word or phrase.
     /// </summary>
@@ -116,5 +142,137 @@ public class LlmController : BaseController
         // Call the new service method for structured data
         var structuredResult = await _translationAndExplanationService.GetStructuredExplanationAsync(text, targetLanguage);
         return new SuccessfulResult<WordExplanationResult>(structuredResult);
+    }
+
+    /// <summary>
+    /// One-off endpoint to populate the Words table with Markdown explanations
+    /// for words found in the WordCollection table.
+    /// </summary>
+    /// <returns>An ApiResult containing the total processed and successfully added counts.</returns>
+    [HttpPost("FillWordsTable")]
+    [ProducesResponseType(typeof(SuccessfulResult<object>), 200)] // Define response type
+    [ProducesResponseType(typeof(FailedResult), 500)] // Define error response type
+    public async Task<ApiResult> FillWordsTable()
+    {
+        const string TARGET_LANGUAGE = "Chinese";
+        const string WORD_LANGUAGE = "English";
+        const string PROVIDER_NAME = "openrouter";
+        const int BATCH_SIZE = 100; // Process 100 words at a time
+
+        long totalProcessed = 0;
+        long successfullyAdded = 0;
+
+        try
+        {
+            // 1. Get Max WordId from Words table
+            // Use Queryable<T>().MaxAsync(field) for potentially empty tables
+            // If WordId is int, cast might be needed depending on MaxAsync overload resolution
+            var maxWordIdObj = await _dbClient.Queryable<Word>().MaxAsync(w => w.WordId);
+            long maxWordId = maxWordIdObj == null ? 0 : Convert.ToInt64(maxWordIdObj); // Handle null for empty table
+
+            _logger.LogInformation("Starting FillWordsTable process. Max existing WordId in Words table: {MaxWordId}", maxWordId);
+
+            // 2. Query WordCollection in batches
+            long currentLastId = maxWordId;
+            List<WordCollection> wordBatch;
+
+            do
+            {
+                wordBatch = await _wordCollectionRepository.GetWordsAfterIdAsync(currentLastId, BATCH_SIZE);
+                _logger.LogDebug("Fetched {Count} words from WordCollection starting after ID {LastId}", wordBatch.Count, currentLastId);
+
+                if (!wordBatch.Any())
+                {
+                    _logger.LogInformation("No more words found in WordCollection after ID {LastId}. Ending process.", currentLastId);
+                    break; // Exit loop if no more words
+                }
+
+                foreach (var wordCollectionRecord in wordBatch)
+                {
+                    totalProcessed++;
+                    currentLastId = wordCollectionRecord.Id; // Update last ID for the next batch query
+
+                    // Skip if WordText is empty or null
+                    if (string.IsNullOrWhiteSpace(wordCollectionRecord.WordText))
+                    {
+                        _logger.LogWarning("Skipping WordCollection record with ID {Id} due to empty WordText.", wordCollectionRecord.Id);
+                        continue;
+                    }
+
+                    try
+                    {
+                        // 3a. Call LLM Service (with retries internally)
+                        var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(wordCollectionRecord.WordText, TARGET_LANGUAGE);
+
+                        if (explanationResult.HasValue)
+                        {
+                            var (markdownExplanation, modelNameUsed) = explanationResult.Value;
+
+                            // 3b. Create Word Entity
+                            var newWord = new Word
+                            {
+                                WordId = (int)wordCollectionRecord.Id, // Cast WordCollection.Id (long) to Word.WordId (int)
+                                WordText = wordCollectionRecord.WordText,
+                                WordLanguage = WORD_LANGUAGE,
+                                ExplanationLanguage = TARGET_LANGUAGE,
+                                MarkdownExplanation = markdownExplanation,
+                                Pronunciation = null, // Not requested
+                                Definitions = null,   // Not requested
+                                Examples = null,      // Not requested
+                                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), // Use DateTimeOffset extension
+                                ProviderModelName = $"{PROVIDER_NAME}:{modelNameUsed}"
+                            };
+
+                            // 3c. Insert into Words Table
+                            try
+                            {
+                                // Use InsertAsync from RepositoryBase
+                                var insertResult = await _wordRepository.InsertAsync(newWord);
+                                if (insertResult) // InsertAsync returns bool indicating success
+                                {
+                                    successfullyAdded++;
+                                    _logger.LogDebug("Successfully added WordId: {WordId}, Text: {WordText}", newWord.WordId, newWord.WordText);
+                                }
+                                else
+                                {
+                                    // This case might indicate an issue if InsertAsync is expected to throw on failure
+                                    _logger.LogWarning("Failed to insert WordId: {WordId}, Text: {WordText} (InsertAsync returned false)", newWord.WordId, newWord.WordText);
+                                }
+                            }
+                            catch (Exception dbEx)
+                            {
+                                // Catch potential exceptions like unique key violations if the word already exists
+                                _logger.LogError(dbEx, "Database error inserting WordId: {WordId}, Text: {WordText}. Possible duplicate?", wordCollectionRecord.Id, wordCollectionRecord.WordText);
+                                // Continue to next word
+                            }
+                        }
+                        else
+                        {
+                            // LLM service failed after retries
+                            _logger.LogWarning("LLM explanation failed for WordCollection ID: {WordCollectionId}, Text: {WordText} after retries.", wordCollectionRecord.Id, wordCollectionRecord.WordText);
+                            // Continue to next word
+                        }
+                    }
+                    catch (Exception serviceEx) // Catch unexpected errors from the loop/service call itself
+                    {
+                        _logger.LogError(serviceEx, "Error processing WordCollection ID: {WordCollectionId}, Text: {WordText}", wordCollectionRecord.Id, wordCollectionRecord.WordText);
+                        // Continue to next word
+                    }
+
+                    // Optional: Add a small delay to avoid overwhelming the LLM API
+                    // await Task.Delay(100);
+                }
+
+            } while (wordBatch.Count == BATCH_SIZE); // Continue if we likely have more batches
+
+            _logger.LogInformation("FillWordsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}", totalProcessed, successfullyAdded);
+            // 4. Return Result using ApiResult structure
+            return new SuccessfulResult<object>(new { TotalProcessed = totalProcessed, SuccessfullyAdded = successfullyAdded });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception during FillWordsTable process.");
+            return Fail($"An error occurred during the FillWordsTable process: {ex.Message}");
+        }
     }
 }

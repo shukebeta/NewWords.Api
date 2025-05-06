@@ -12,9 +12,9 @@ namespace NewWords.Api.Entities
     public class Word
     {
         /// <summary>
-        /// Unique identifier for this specific word explanation (Primary Key, Auto-Increment).
+        /// Unique identifier for this specific word explanation (Primary Key).
         /// </summary>
-        [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
+        [SugarColumn(IsPrimaryKey = true)]
         public int WordId { get; set; }
 
         /// <summary>

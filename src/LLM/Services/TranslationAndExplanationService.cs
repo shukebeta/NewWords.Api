@@ -1,9 +1,13 @@
+using System; // Added for Exception, ArgumentException
+using System.Collections.Generic; // Added for List
+using System.Net.Http; // Added for HttpClient
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks; // Added for Task, Task.Delay
+using Api.Framework.Options; // Added for AuthenticationHeaderValue
 using LLM.Configuration;
 using LLM.Models;
-using System.Net.Http.Headers;
-using Api.Framework.Options; // Added for AuthenticationHeaderValue
 
 namespace LLM.Services
 {
@@ -34,34 +38,64 @@ namespace LLM.Services
         /// </summary>
         /// <param name="inputText">The word or phrase to explain.</param>
         /// <param name="targetLanguage">The language for the explanation.</param>
-        /// <returns>A string containing the Markdown explanation.</returns>
+        /// <returns>A tuple containing the Markdown explanation and the model name used, or null if all attempts fail.</returns>
         /// <exception cref="ArgumentException">Thrown if input text or target language is empty.</exception>
-        /// <exception cref="Exception">Thrown if all configured models fail.</exception>
-        public async Task<string> GetMarkdownExplanationAsync(string inputText, string targetLanguage)
+        public async Task<(string Markdown, string ModelName)?> GetMarkdownExplanationAsync(string inputText, string targetLanguage)
         {
             ValidateInput(inputText, targetLanguage);
-            string currentModel = _configService.GetPrimaryModel();
+            const int maxRetries = 3;
+            const int delayBetweenRetriesMs = 500; // 0.5 second delay
 
-            while (!string.IsNullOrEmpty(currentModel))
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                try
+                string currentModel = _configService.GetPrimaryModel();
+                Exception? lastException = null; // Store last exception for logging if all models fail in an attempt
+
+                while (!string.IsNullOrEmpty(currentModel))
                 {
-                    var apiResponse = await _MakeMarkdownApiRequestAsync(inputText, targetLanguage, currentModel);
-                    // For Markdown, we expect the raw content string directly
-                    var responseObj = JsonSerializer.Deserialize<OpenRouterResponse>(apiResponse, JsonOptions.CaseInsensitive);
-                    if (responseObj?.Choices != null && responseObj.Choices.Count > 0)
+                    try
                     {
-                        return responseObj.Choices[0].Message.Content.Trim();
+                        var apiResponse = await _MakeMarkdownApiRequestAsync(inputText, targetLanguage, currentModel);
+                        var responseObj = JsonSerializer.Deserialize<OpenRouterResponse>(apiResponse, JsonOptions.CaseInsensitive);
+
+                        if (responseObj?.Choices != null && responseObj.Choices.Count > 0 && !string.IsNullOrWhiteSpace(responseObj.Choices[0].Message.Content))
+                        {
+                            // Success! Return the markdown and the model name.
+                            return (responseObj.Choices[0].Message.Content.Trim(), currentModel);
+                        }
+
+                        // Treat empty content or failed parsing as an error for this model
+                        lastException = new Exception($"Failed to parse Markdown response or empty content from model {currentModel}.");
+                        Console.WriteLine($"Attempt {attempt}/{maxRetries}: {lastException.Message}"); // Log failure for this model
                     }
-                    // If parsing fails or content is empty, treat as model failure and try fallback
-                    throw new Exception($"Failed to parse Markdown response or empty content from model {currentModel}.");
-                }
-                catch (Exception ex)
+                    catch (Exception ex)
+                    {
+                        lastException = ex; // Store the exception
+                        Console.WriteLine($"Attempt {attempt}/{maxRetries}: Error with model {currentModel}: {ex.Message}"); // Log the error
+                    }
+
+                    // If we got here, the current model failed. Try the fallback.
+                    currentModel = _configService.GetFallbackModel(currentModel);
+                    if (!string.IsNullOrEmpty(currentModel))
+                    {
+                        Console.WriteLine($"Attempt {attempt}/{maxRetries}: Falling back to model: {currentModel}");
+                    }
+                } // End while loop (trying primary and fallback models)
+
+                // If we reach here, both primary and fallback models failed for this attempt.
+                Console.WriteLine($"Attempt {attempt}/{maxRetries} failed for all configured models.");
+
+                // If this wasn't the last attempt, wait before retrying.
+                if (attempt < maxRetries)
                 {
-                    LogAndSelectFallbackModel(ex, ref currentModel);
+                    await Task.Delay(delayBetweenRetriesMs);
+                    Console.WriteLine($"Retrying ({attempt + 1}/{maxRetries})...");
                 }
-            }
-            throw new Exception("All configured models failed to provide a Markdown explanation.");
+            } // End for loop (retries)
+
+            // If all retries failed, return null.
+            Console.WriteLine($"All {maxRetries} attempts failed to provide a Markdown explanation for input: '{inputText}'.");
+            return null;
         }
 
         /// <summary>
