@@ -79,12 +79,6 @@ namespace LLM.Services
                         // And the specific path is "/chat/completions"
                         // This might need adjustment based on how ApiBaseUrl is defined in appsettings
                         string apiUrl = agent.ApiBaseUrl.EndsWith("/") ? agent.ApiBaseUrl + "chat/completions" : agent.ApiBaseUrl + "/chat/completions";
-                        if (agent.ApiProvider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase) && !agent.ApiBaseUrl.Contains("/api/v1"))
-                        {
-                             // Specific OpenRouter structure if ApiBaseUrl is just "https://openrouter.ai"
-                             apiUrl = agent.ApiBaseUrl.TrimEnd('/') + "/api/v1/chat/completions";
-                        }
-
 
                         var apiResponseJson = await _MakeMarkdownApiRequestAsync(inputText, targetLanguage, currentModel, agent.ApiKey, apiUrl);
                         var responseObj = JsonSerializer.Deserialize<OpenRouterResponse>(apiResponseJson, JsonOptions.CaseInsensitive);
@@ -215,46 +209,28 @@ namespace LLM.Services
 
         private async Task<string> _MakeMarkdownApiRequestAsync(string inputText, string targetLanguage, string model, string apiKey, string apiRequestUrl)
         {
-            var userPrompt = $@"Generate ONLY a concise yet comprehensive explanation formatted in Markdown for the input text ""{inputText}"" in {targetLanguage}.
-The explanation MUST follow this structure exactly:
+            var userPrompt = $@"You are a language learning assistant that provides detailed explanations when given a word or phrase. When I provide a word or phrase in any language and specify my target Language ""{targetLanguage}"", please respond with:
 
-**[Input Text]** \[IPA Transcription] **[Primary Meaning in {targetLanguage}]**
+1. The word/phrase with its IPA Transcription
+2. Any relevant grammatical information (tense, part of speech, etc.) in {targetLanguage}
+3. A clear definition
+4. 2-3 example sentences using the word/phrase in original language with translations
+5. 3-4 related words/synonyms/antonyms with pronunciations and translations and one example sentence
 
----
+If I provide a complete sentence instead of a single word or phrase, please:
+1. Provide a clear translation of the full sentence in the target language
+2. Break down the sentence structure and explain its grammatical components
+3. Identify and explain any idioms, colloquialisms, or potentially difficult parts of the sentence
+4. Provide alternative ways to express the same meaning
 
-### **[{targetLanguage} Explanation]:**
+Important: Do not label translations with ""{targetLanguage}:"" before each translated sentence. Simply provide the translation directly after the original sentence.
 
-[Detailed explanation of meaning and usage in {targetLanguage}]
-
----
-
-### **[Example Sentences]:**
-
-* [Sentence 1 in original language]
-  [{targetLanguage} translation of Sentence 1]
-
-* [Sentence 2 in original language]
-  [{targetLanguage} translation of Sentence 2]
-  
-(Include 2-3 relevant examples)
-
----
-
-### **[Related Vocabulary & Phrases]:**
-
-* **[Related Term 1]**: [Meaning/Usage in {targetLanguage}]
-* **[Related Term 2]**: [Meaning/Usage in {targetLanguage}]
-
----
-
-[Optional: A concluding sentence or usage tip in {targetLanguage}]
-
+Format your response in a clear, structured way with bold headings and good spacing to make it easy to read. 
 **IMPORTANT:**
-- Respond ONLY with the Markdown content matching the structure above.
-- Do NOT include any introductory text, concluding remarks, or code fences (like ```markdown) outside the defined structure.
-- Replace bracketed placeholders like `[Input Text]` or `[IPA Transcription]` with the actual information for ""{inputText}"".
-- Ensure the IPA transcription is accurate.
-- Provide translations and explanations in {targetLanguage}.
+RESPOND WITH THE MARKDOWN CONTENT ONLY.
+DO NOT INCLUDE ANY INTRODUCTORY TEXT, CONCLUDING REMARKS, OR CODE FENCES (like ```markdown)'
+
+My request is: {inputText}
 ";
 
             var systemPrompt = "You are a linguistic expert generating helpful, concise Markdown explanations for language learners. Respond ONLY with the requested Markdown text, nothing else.";
@@ -325,7 +301,7 @@ Remember: Your entire response must be ONLY the JSON object, starting with `{{` 
             requestMessage.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
 
             var response = await _httpClient.SendAsync(requestMessage);
-            
+
             // We will check for success status code in the calling method to get more details
             // response.EnsureSuccessStatusCode(); // Throws if status code is not 2xx. Moved to allow status code access.
 

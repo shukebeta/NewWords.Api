@@ -264,24 +264,23 @@ public class LlmController : BaseController
                                 _logger.LogInformation("Successfully got explanation from provider {Provider} for word '{WordText}' using model {ModelName}", agent.ApiProvider, wordCollectionRecord.WordText, explanationResult.ModelName);
                                 break; // Success, no need to try other providers
                             }
-                            else
+
+                            unavailableProviders.Add(agent.ApiProvider);
+                            // Log the failure for this provider
+                            string errorMsg = explanationResult.ErrorMessage ?? "Unknown error";
+                            if (explanationResult.HttpStatusCode.HasValue)
                             {
-                                // Log the failure for this provider
-                                string errorMsg = explanationResult.ErrorMessage ?? "Unknown error";
-                                if (explanationResult.HttpStatusCode.HasValue)
+                                int statusCode = explanationResult.HttpStatusCode.Value;
+                                errorMsg += $" (HTTP Status: {statusCode})";
+                                // Check if it's a 40x error to mark provider unavailable for this run
+                                if (statusCode >= 400 && statusCode < 500)
                                 {
-                                    int statusCode = explanationResult.HttpStatusCode.Value;
-                                    errorMsg += $" (HTTP Status: {statusCode})";
-                                    // Check if it's a 40x error to mark provider unavailable for this run
-                                    if (statusCode >= 400 && statusCode < 500)
-                                    {
-                                        _logger.LogWarning("Marking provider {Provider} as unavailable for this run due to HTTP {StatusCode} error for word '{WordText}': {ErrorMessage}", agent.ApiProvider, statusCode, wordCollectionRecord.WordText, errorMsg);
-                                        unavailableProviders.Add(agent.ApiProvider);
-                                    }
+                                    _logger.LogWarning("Marking provider {Provider} as unavailable for this run due to HTTP {StatusCode} error for word '{WordText}': {ErrorMessage}", agent.ApiProvider, statusCode, wordCollectionRecord.WordText, errorMsg);
+                                    unavailableProviders.Add(agent.ApiProvider);
                                 }
-                                _logger.LogWarning("Provider {Provider} failed for word '{WordText}': {ErrorMessage}", agent.ApiProvider, wordCollectionRecord.WordText, errorMsg);
-                                // Continue to next provider
                             }
+                            _logger.LogWarning("Provider {Provider} failed for word '{WordText}': {ErrorMessage}", agent.ApiProvider, wordCollectionRecord.WordText, errorMsg);
+                            // Continue to next provider
                         }
 
                         if (successfulResult != null && usedAgent != null)
@@ -341,7 +340,7 @@ public class LlmController : BaseController
                     // await Task.Delay(100);
                 }
 
-            } while (wordBatch.Count == BATCH_SIZE); // Continue if we likely have more batches
+            } while (wordBatch.Any()); // Continue as long as any words are returned in a batch
 
             _logger.LogInformation("FillWordsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}", totalProcessed, successfullyAdded);
             // 4. Return Result using ApiResult structure
