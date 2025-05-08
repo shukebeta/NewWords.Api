@@ -1,10 +1,6 @@
-using System; // Added for Exception, ArgumentException
-using System.Collections.Generic; // Added for List
-using System.Net.Http; // Added for HttpClient
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks; // Added for Task, Task.Delay
 using Api.Framework.Options; // Added for AuthenticationHeaderValue
 using LLM.Configuration; // LlmConfigurationService, AgentConfig
 using LLM.Models;
@@ -194,17 +190,6 @@ namespace LLM.Services
             {
                 throw new ArgumentException("Target language cannot be empty or null.", nameof(targetLanguage));
             }
-        }
-
-        // Obsolete or needs rework for agent-based model iteration
-        private void LogAndSelectFallbackModel(Exception ex, ref string currentModel /*, LlmConfigurationService configService */)
-        {
-            Console.WriteLine($"Error with model {currentModel}: {ex.Message}");
-            // currentModel = configService.GetFallbackModel(currentModel); // This logic is now per-agent
-            // For now, this method is problematic with the new AgentConfig structure.
-            // The calling method should handle iterating agent.Models.
-            currentModel = string.Empty; // Stop trying models for this agent on error for now
-            Console.WriteLine($"Falling back logic needs rework for agent-based models. Stopping model attempts for this agent.");
         }
 
         private async Task<string> _MakeMarkdownApiRequestAsync(string inputText, string targetLanguage, string model, string apiKey, string apiRequestUrl)
