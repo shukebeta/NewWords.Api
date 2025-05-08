@@ -9,27 +9,18 @@ using System; // Required for DateTime
 
 namespace NewWords.Api.Services
 {
-    public class VocabularyService : IVocabularyService
+    public class VocabularyService(
+        Repositories.IUserRepository userRepository,
+        Repositories.IWordRepository wordRepository,
+        Repositories.IUserWordRepository userWordRepository)
+        : IVocabularyService
     {
-        private readonly Repositories.IUserRepository _userRepository;
-        private readonly Repositories.IWordRepository _wordRepository;
-        private readonly Repositories.IUserWordRepository _userWordRepository;
         // TODO: Inject a background job client service (e.g., IBackgroundJobClient from Hangfire) later
 
-        public VocabularyService(
-            Repositories.IUserRepository userRepository,
-            Repositories.IWordRepository wordRepository,
-            Repositories.IUserWordRepository userWordRepository)
-        {
-            _userRepository = userRepository;
-            _wordRepository = wordRepository;
-            _userWordRepository = userWordRepository;
-        }
-
-        public async Task<UserWordDto?> AddWordAsync(int userId, AddWordRequestDto addWordDto)
+        public async Task<UserWordDto?> AddWordAsync(long userId, AddWordRequestDto addWordDto)
         {
             // 1. Get user details (needed for languages)
-            var user = await _userRepository.GetByIdAsync(userId);
+            var user = await userRepository.GetByIdAsync(userId);
             if (user == null)
             {
                 return null; // User not found
@@ -46,7 +37,7 @@ namespace NewWords.Api.Services
             var userNativeLanguage = user.NativeLanguage;
 
             // 3. Find or Create the canonical Word entry
-            var wordEntry = await _wordRepository.GetByTextAndLanguageAsync(wordText, wordLanguage, userNativeLanguage);
+            var wordEntry = await wordRepository.GetByTextAndLanguageAsync(wordText, wordLanguage, userNativeLanguage);
 
             bool needsGeneration = false;
             if (wordEntry == null)
@@ -56,11 +47,11 @@ namespace NewWords.Api.Services
                 {
                     WordText = wordText,
                     WordLanguage = wordLanguage,
-                    UserNativeLanguage = userNativeLanguage,
+                    ExplanationLanguage = userNativeLanguage,
                     // LLM fields are initially null
                     CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
                 };
-                await _wordRepository.InsertAsync(wordEntry);
+                await wordRepository.InsertAsync(wordEntry);
                 needsGeneration = true;
             }
             else if (string.IsNullOrEmpty(wordEntry.Definitions) && string.IsNullOrEmpty(wordEntry.Examples) && string.IsNullOrEmpty(wordEntry.Pronunciation))
@@ -71,7 +62,7 @@ namespace NewWords.Api.Services
 
 
             // 4. Find or Create the UserWord link
-            var userWordEntry = await _userWordRepository.GetByUserAndWordIdAsync(userId, wordEntry.WordId);
+            var userWordEntry = await userWordRepository.GetByUserAndWordIdAsync(userId, wordEntry.WordId);
 
             if (userWordEntry == null)
             {
@@ -82,7 +73,7 @@ namespace NewWords.Api.Services
                     Status = WordStatus.New,
                     CreatedAt = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds
                 };
-                await _userWordRepository.InsertAsync(userWordEntry);
+                await userWordRepository.InsertAsync(userWordEntry);
             }
             // else: User already has this word, just return the existing entry details
 
@@ -98,12 +89,12 @@ namespace NewWords.Api.Services
             return MapToUserWordDto(userWordEntry, wordEntry);
         }
 
-        public async Task<List<UserWordDto>> GetUserWordsAsync(int userId, WordStatus? status, int page, int pageSize)
+        public async Task<List<UserWordDto>> GetUserWordsAsync(long userId, WordStatus? status, int page, int pageSize)
         {
-            var userWords = await _userWordRepository.GetUserWordsAsync(userId, status, page, pageSize);
+            var userWords = await userWordRepository.GetUserWordsAsync(userId, status, page, pageSize);
 
             var wordIds = userWords.Select(uw => uw.WordId).ToList();
-            var words = await _wordRepository.GetListByIdsAsync(wordIds.ToArray());
+            var words = await wordRepository.GetListByIdsAsync(wordIds.ToArray());
 
             var wordDict = words.ToDictionary(w => w.WordId, w => w);
             var results = new List<UserWordDto>();
@@ -119,7 +110,7 @@ namespace NewWords.Api.Services
                         AddedAt = DateTime.UnixEpoch.AddSeconds(uw.CreatedAt),
                         WordText = word.WordText,
                         WordLanguage = word.WordLanguage,
-                        UserNativeLanguage = word.UserNativeLanguage,
+                        UserNativeLanguage = word.ExplanationLanguage,
                         Pronunciation = word.Pronunciation,
                         Definitions = word.Definitions,
                         Examples = word.Examples,
@@ -131,21 +122,21 @@ namespace NewWords.Api.Services
             return results;
         }
 
-         public Task<int> GetUserWordsCountAsync(int userId, WordStatus? status)
+         public Task<int> GetUserWordsCountAsync(long userId, WordStatus? status)
          {
-             return _userWordRepository.GetUserWordsCountAsync(userId, status);
+             return userWordRepository.GetUserWordsCountAsync(userId, status);
          }
 
 
-        public async Task<UserWordDto?> GetUserWordDetailsAsync(int userId, int userWordId)
+        public async Task<UserWordDto?> GetUserWordDetailsAsync(long userId, int userWordId)
         {
-            var userWord = await _userWordRepository.GetSingleAsync(uw => uw.UserId == userId && uw.UserWordId == userWordId);
+            var userWord = await userWordRepository.GetSingleAsync(uw => uw.UserId == userId && uw.UserWordId == userWordId);
             if (userWord == null)
             {
                 return null;
             }
 
-            var word = await _wordRepository.GetSingleAsync(userWord.WordId);
+            var word = await wordRepository.GetSingleAsync(userWord.WordId);
             if (word == null)
             {
                 return null;
@@ -159,7 +150,7 @@ namespace NewWords.Api.Services
                 AddedAt = DateTime.UnixEpoch.AddSeconds(userWord.CreatedAt),
                 WordText = word.WordText,
                 WordLanguage = word.WordLanguage,
-                UserNativeLanguage = word.UserNativeLanguage,
+                UserNativeLanguage = word.ExplanationLanguage,
                 Pronunciation = word.Pronunciation,
                 Definitions = word.Definitions,
                 Examples = word.Examples,
@@ -167,21 +158,21 @@ namespace NewWords.Api.Services
             };
         }
 
-        public async Task<bool> UpdateWordStatusAsync(int userId, int userWordId, WordStatus newStatus)
+        public async Task<bool> UpdateWordStatusAsync(long userId, int userWordId, WordStatus newStatus)
         {
-            var userWord = await _userWordRepository.GetSingleAsync(uw => uw.UserId == userId && uw.UserWordId == userWordId);
+            var userWord = await userWordRepository.GetSingleAsync(uw => uw.UserId == userId && uw.UserWordId == userWordId);
             if (userWord == null)
             {
                 return false;
             }
 
             userWord.Status = newStatus;
-            return await _userWordRepository.UpdateAsync(userWord);
+            return await userWordRepository.UpdateAsync(userWord);
         }
 
         public async Task<bool> DeleteWordAsync(int userId, int userWordId)
         {
-            return await _userWordRepository.DeleteAsync(uw => uw.UserWordId == userWordId && uw.UserId == userId);
+            return await userWordRepository.DeleteAsync(uw => uw.UserWordId == userWordId && uw.UserId == userId);
         }
 
         // Helper method for mapping
@@ -195,7 +186,7 @@ namespace NewWords.Api.Services
                 AddedAt = DateTime.UnixEpoch.AddSeconds(uw.CreatedAt),
                 WordText = w.WordText,
                 WordLanguage = w.WordLanguage,
-                UserNativeLanguage = w.UserNativeLanguage,
+                UserNativeLanguage = w.ExplanationLanguage,
                 Pronunciation = w.Pronunciation,
                 Definitions = w.Definitions,
                 Examples = w.Examples,

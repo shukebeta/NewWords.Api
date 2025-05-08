@@ -4,22 +4,15 @@ using System;
 namespace NewWords.Api
 {
     [AttributeUsage(AttributeTargets.Method)]
-    public class EnforcePageSizeLimitAttribute : ActionFilterAttribute
+    public class EnforcePageSizeLimitAttribute(int maxPageSize) : ActionFilterAttribute
     {
-        private readonly int _maxPageSize;
-
-        public EnforcePageSizeLimitAttribute(int maxPageSize)
-        {
-            _maxPageSize = maxPageSize;
-        }
-
         public override void OnActionExecuting(ActionExecutingContext context)
         {
             if (context.ActionArguments.TryGetValue("pageSize", out var pageSizeObj) && pageSizeObj is int pageSize)
             {
-                if (pageSize > _maxPageSize)
+                if (pageSize > maxPageSize)
                 {
-                    context.ActionArguments["pageSize"] = _maxPageSize;
+                    context.ActionArguments["pageSize"] = maxPageSize;
                 }
             }
 

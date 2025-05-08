@@ -2,6 +2,7 @@
 -- Generated based on entities in src/NewWords.Api/Entities
 -- MySQL compatible syntax
 
+use NewWords;
 -- Table: LlmConfigurations
 CREATE TABLE IF NOT EXISTS LlmConfigurations (
     LlmConfigId INT PRIMARY KEY AUTO_INCREMENT,

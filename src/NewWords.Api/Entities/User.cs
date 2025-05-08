@@ -13,12 +13,14 @@ namespace NewWords.Api.Entities
         /// Unique identifier for the user (Primary Key, Auto-Increment).
         /// </summary>
         [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
-        public int UserId { get; set; }
+        public long UserId { get; set; }
 
         /// <summary>
         /// User's email address (Unique, Required). Used for login.
         /// </summary>
         public string Email { get; set; } = string.Empty;
+        public string Salt { get; init; } = string.Empty;
+        public string Gravatar { get; init; } = string.Empty;
 
         /// <summary>
         /// Hashed password for the user (Required).
@@ -42,6 +44,8 @@ namespace NewWords.Api.Entities
         /// Timestamp when the user account was created (Required, Unix timestamp as long).
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start)
+        public long CreatedAt { get; set; }
+        public long? UpdatedAt { get; set; }
+        public long? DeletedAt { get; set; }
     }
 }

@@ -7,18 +7,14 @@ using System.Threading.Tasks;
 
 namespace NewWords.Api.Repositories
 {
-    public class UserWordRepository : RepositoryBase<UserWord>, IUserWordRepository
+    public class UserWordRepository(ISqlSugarClient dbClient) : RepositoryBase<UserWord>(dbClient), IUserWordRepository
     {
-        public UserWordRepository(ISqlSugarClient dbClient) : base(dbClient)
-        {
-        }
-
-        public async Task<UserWord?> GetByUserAndWordIdAsync(int userId, int wordId)
+        public async Task<UserWord?> GetByUserAndWordIdAsync(long userId, int wordId)
         {
             return await GetFirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordId == wordId);
         }
 
-        public async Task<List<UserWord>> GetUserWordsAsync(int userId, WordStatus? status, int page, int pageSize)
+        public async Task<List<UserWord>> GetUserWordsAsync(long userId, WordStatus? status, int page, int pageSize)
         {
             var query = db.Queryable<UserWord>()
                 .Where(uw => uw.UserId == userId);
@@ -38,7 +34,7 @@ namespace NewWords.Api.Repositories
                 .ToListAsync();
         }
 
-        public async Task<int> GetUserWordsCountAsync(int userId, WordStatus? status)
+        public async Task<int> GetUserWordsCountAsync(long userId, WordStatus? status)
         {
             var query = db.Queryable<UserWord>()
                 .Where(uw => uw.UserId == userId);

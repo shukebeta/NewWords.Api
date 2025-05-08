@@ -8,8 +8,8 @@ namespace NewWords.Api.Repositories
 {
     public interface IUserWordRepository : IRepositoryBase<UserWord>
     {
-        Task<UserWord?> GetByUserAndWordIdAsync(int userId, int wordId);
-        Task<List<UserWord>> GetUserWordsAsync(int userId, WordStatus? status, int page, int pageSize);
-        Task<int> GetUserWordsCountAsync(int userId, WordStatus? status);
+        Task<UserWord?> GetByUserAndWordIdAsync(long userId, int wordId);
+        Task<List<UserWord>> GetUserWordsAsync(long userId, WordStatus? status, int page, int pageSize);
+        Task<int> GetUserWordsCountAsync(long userId, WordStatus? status);
     }
 }

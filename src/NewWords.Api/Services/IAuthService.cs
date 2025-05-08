@@ -1,5 +1,6 @@
 using NewWords.Api.Models.DTOs.Auth;
 using System.Threading.Tasks;
+using Api.Framework.Models;
 
 namespace NewWords.Api.Services
 {
@@ -11,15 +12,17 @@ namespace NewWords.Api.Services
         /// <summary>
         /// Registers a new user.
         /// </summary>
-        /// <param name="registerDto">User registration data.</param>
-        /// <returns>True if registration was successful, false otherwise (e.g., email exists).</returns>
-        Task<bool> RegisterAsync(RegisterRequestDto registerDto);
+        /// <param name="request">User registration data.</param>
+        /// <param name="jwtConfig"></param>
+        /// <returns>jwtToken if registration was successful</returns>
+        Task<string> RegisterAsync(RegisterRequest request, JwtConfig jwtConfig);
 
         /// <summary>
         /// Attempts to log in a user.
         /// </summary>
-        /// <param name="loginDto">User login credentials.</param>
-        /// <returns>An AuthResponseDto containing the JWT if login is successful, otherwise null.</returns>
-        Task<AuthResponseDto?> LoginAsync(LoginRequestDto loginDto);
+        /// <param name="loginRequest">User login credentials.</param>
+        /// <param name="jwtConfig"></param>
+        /// <returns>jwtToken if login was successful</returns>
+        Task<string> LoginAsync(LoginRequest loginRequest, JwtConfig jwtConfig);
     }
 }

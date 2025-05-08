@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Api.Framework;
 using Api.Framework.Database;
+using Api.Framework.Exceptions;
 using Api.Framework.Extensions;
 using Api.Framework.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -31,7 +32,8 @@ var envName = builder.Environment.EnvironmentName;
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
-    options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    // options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(SetupSwaggerGen());
@@ -55,6 +57,12 @@ builder.Services.AddScoped<NewWords.Api.Repositories.IUserRepository, NewWords.A
 builder.Services.AddScoped<NewWords.Api.Repositories.IWordRepository, NewWords.Api.Repositories.WordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IUserWordRepository, NewWords.Api.Repositories.UserWordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.ILlmConfigurationRepository, NewWords.Api.Repositories.LlmConfigurationRepository>();
+builder.Services.AddScoped<NewWords.Api.Repositories.IWordCollectionRepository, NewWords.Api.Repositories.WordCollectionRepository>(); // Added registration
+builder.Services.AddScoped<LLM.Configuration.LlmConfigurationService>();
+builder.Services.AddScoped<LLM.Services.LanguageRecognitionService>();
+builder.Services.AddScoped<LLM.Services.TranslationAndExplanationService>();
+builder.Services.AddHttpClient<LLM.Services.LanguageRecognitionService>();
+builder.Services.AddHttpClient<LLM.Services.TranslationAndExplanationService>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Local"))

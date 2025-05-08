@@ -1,3 +1,4 @@
+documents
 src/**/[Bb]in
 src/**/[Oo]bj
 .idea/
@@ -63,7 +64,6 @@ nunit-*.xml
 riderModule.iml
 /_ReSharper.Caches/
 .fake
-NewWords.Api.sln.DotSettings.user
 appsettings.Local.json
 appsettings.Development.json
 .vscode

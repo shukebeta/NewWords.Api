@@ -8,33 +8,24 @@ using Api.Framework.Result;
 
 namespace NewWords.Api.Controllers
 {
-    [ApiController]
-    [Route("api/userwords")]
     [Authorize]
-    public class VocabularyController : ControllerBase
+    public class VocabularyController(IVocabularyService vocabService) : BaseController
     {
-        private readonly IVocabularyService _vocabService;
-
-        public VocabularyController(IVocabularyService vocabService)
-        {
-            _vocabService = vocabService;
-        }
-
         /// <summary>
         /// Adds a new word for the user.
         /// </summary>
         /// <param name="addDto">The word details to add.</param>
         /// <returns>The added word details.</returns>
         [HttpPost]
-        public async Task<ApiResult<UserWordDto>> AddUserWord([FromBody] AddWordRequestDto addDto)
+        public async Task<ApiResult<UserWordDto>> AddWord([FromBody] AddWordRequestDto addDto)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out var userId)) return new FailedResult<UserWordDto>(default, "Invalid user ID.");
 
-            var resultDto = await _vocabService.AddWordAsync(userId, addDto);
+            var resultDto = await vocabService.AddWordAsync(userId, addDto);
             if (resultDto == null)
             {
-                return new FailedResult<UserWordDto>(default, "Failed to add word.");
+                throw new Exception("Failed to add word.");
             }
             return new SuccessfulResult<UserWordDto>(resultDto, "Word added successfully.");
         }
@@ -47,15 +38,15 @@ namespace NewWords.Api.Controllers
         /// <param name="pageSize">Number of items per page.</param>
         /// <returns>Paginated list of user words.</returns>
         [HttpGet]
-        public async Task<ApiResult<object>> GetUserWords([FromQuery] WordStatus? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<ApiResult<object>> GetWords(WordStatus? status, int page = 1, int pageSize = 10)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<object>(default, "Invalid user ID.");
+            if (!long.TryParse(userIdString, out var userId)) return new FailedResult<object>(default, "Invalid user ID.");
 
             pageSize = Math.Clamp(pageSize, 1, 50);
 
-            var words = await _vocabService.GetUserWordsAsync(userId, status, page, pageSize);
-            var totalCount = await _vocabService.GetUserWordsCountAsync(userId, status);
+            var words = await vocabService.GetUserWordsAsync(userId, status, page, pageSize);
+            var totalCount = await vocabService.GetUserWordsCountAsync(userId, status);
 
             return new SuccessfulResult<object>(new { TotalCount = totalCount, Page = page, PageSize = pageSize, Items = words }, "User words retrieved successfully.");
         }
@@ -71,7 +62,7 @@ namespace NewWords.Api.Controllers
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out var userId)) return new FailedResult<UserWordDto>(default, "Invalid user ID.");
 
-            var wordDetails = await _vocabService.GetUserWordDetailsAsync(userId, userWordId);
+            var wordDetails = await vocabService.GetUserWordDetailsAsync(userId, userWordId);
             return wordDetails == null ? new FailedResult<UserWordDto>(default, "Word not found.") : new SuccessfulResult<UserWordDto>(wordDetails, "Word details retrieved successfully.");
         }
 
@@ -87,7 +78,7 @@ namespace NewWords.Api.Controllers
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out var userId)) return new FailedResult<string>(default, "Invalid user ID.");
 
-            var success = await _vocabService.UpdateWordStatusAsync(userId, userWordId, updateDto.NewStatus);
+            var success = await vocabService.UpdateWordStatusAsync(userId, userWordId, updateDto.NewStatus);
             if (!success)
             {
                 return new FailedResult<string>(default, "Word entry not found or update failed.");
@@ -106,7 +97,7 @@ namespace NewWords.Api.Controllers
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out var userId)) return new FailedResult<string>(default, "Invalid user ID.");
 
-            var success = await _vocabService.DeleteWordAsync(userId, userWordId);
+            var success = await vocabService.DeleteWordAsync(userId, userWordId);
             if (!success)
             {
                 return new FailedResult<string>(default, "Word entry not found or delete failed.");

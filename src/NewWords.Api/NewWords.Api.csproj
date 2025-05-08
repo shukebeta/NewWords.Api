@@ -13,6 +13,7 @@
     <PackageReference Include="SqlSugarCore" Version="5.1.4.189" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <ProjectReference Include="..\Api.Framework\Api.Framework.csproj" />
+    <ProjectReference Include="..\LLM\LLM.csproj" />
   </ItemGroup>
 
 </Project>
