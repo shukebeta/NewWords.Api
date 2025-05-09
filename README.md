@@ -1,5 +1,6 @@
 # NewWords.Api
-An application that helps people learn foreign languages
+
+An application that helps people learn new words in foreign languages
 你的词汇教练
 
 这是一个帮你更快掌握一门外语的一个App：它记录你的生词，帮助你记住它的拼写、发音，以及更重要的，用法。
