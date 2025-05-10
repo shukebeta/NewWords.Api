@@ -7,7 +7,8 @@ using NewWords.Api.Repositories; // Added
 using SqlSugar; // Added
 using NewWords.Api.Entities; // Added
 using LLM.Configuration; // Added for LlmConfigurationService
-using System.Collections.Generic; // Added for HashSet
+
+// Added for HashSet
 
 namespace NewWords.Api.Controllers;
 

@@ -1,7 +1,6 @@
 using Api.Framework;
 using NewWords.Api.Entities;
 using SqlSugar;
-using System.Threading.Tasks;
 
 namespace NewWords.Api.Repositories
 {

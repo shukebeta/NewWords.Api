@@ -1,5 +1,4 @@
 using NewWords.Api.Enums;
-using System;
 
 namespace NewWords.Api.Models.DTOs.Vocabulary
 {

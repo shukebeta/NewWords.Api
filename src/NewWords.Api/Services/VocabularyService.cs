@@ -1,11 +1,9 @@
 using NewWords.Api.Models.DTOs.Vocabulary;
 using NewWords.Api.Entities;
 using NewWords.Api.Enums;
-using SqlSugar;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using System.Linq; // Required for .Select() and potentially other LINQ methods
-using System; // Required for DateTime
+// Required for .Select() and potentially other LINQ methods
+
+// Required for DateTime
 
 namespace NewWords.Api.Services
 {

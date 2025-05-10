@@ -1,19 +1,12 @@
 using NewWords.Api.Models.DTOs.Auth;
 using NewWords.Api.Entities;
-using SqlSugar;
-using System.Threading.Tasks;
-using BCrypt.Net; // For password hashing
-using Microsoft.Extensions.Configuration; // For reading config
-using System.IdentityModel.Tokens.Jwt; // For JWT generation
-using System.Security.Claims;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using System;
+// For password hashing
+// For reading config
+// For JWT generation
 using Api.Framework.Extensions;
 using Api.Framework.Helper;
 using Api.Framework.Models;
 using NewWords.Api.Models;
-using WeihanLi.Extensions;
 
 namespace NewWords.Api.Services
 {

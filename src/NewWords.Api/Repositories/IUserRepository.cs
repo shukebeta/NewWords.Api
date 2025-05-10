@@ -1,7 +1,6 @@
 using Api.Framework;
 using Api.Framework.Models;
 using NewWords.Api.Entities;
-using System.Threading.Tasks;
 
 namespace NewWords.Api.Repositories
 {

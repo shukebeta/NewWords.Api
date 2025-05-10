@@ -1,8 +1,6 @@
 using Api.Framework;
 using NewWords.Api.Entities;
 using NewWords.Api.Enums;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace NewWords.Api.Repositories
 {

@@ -2,8 +2,6 @@ using Api.Framework;
 using Api.Framework.Models;
 using NewWords.Api.Entities;
 using SqlSugar;
-using System.Threading.Tasks;
-using System.Linq.Expressions;
 
 namespace NewWords.Api.Repositories
 {

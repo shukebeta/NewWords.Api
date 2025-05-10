@@ -1,5 +1,4 @@
 using NewWords.Api.Models.DTOs.Auth;
-using System.Threading.Tasks;
 using Api.Framework.Models;
 using NewWords.Api.Models;
 

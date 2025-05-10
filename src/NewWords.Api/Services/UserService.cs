@@ -1,9 +1,5 @@
 using NewWords.Api.Models.DTOs.User;
-using NewWords.Api.Entities;
-using SqlSugar;
-using System.Threading.Tasks;
 using Api.Framework.Models;
-using System.Linq;
 
 namespace NewWords.Api.Services
 {

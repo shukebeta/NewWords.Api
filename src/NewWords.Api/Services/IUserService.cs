@@ -1,6 +1,5 @@
 using Api.Framework.Models;
 using NewWords.Api.Models.DTOs.User;
-using System.Threading.Tasks;
 
 namespace NewWords.Api.Services
 {

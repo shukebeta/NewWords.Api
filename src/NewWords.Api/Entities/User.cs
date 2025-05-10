@@ -1,5 +1,4 @@
 using SqlSugar;
-using System;
 
 namespace NewWords.Api.Entities
 {

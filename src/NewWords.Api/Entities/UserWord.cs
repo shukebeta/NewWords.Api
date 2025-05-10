@@ -1,5 +1,4 @@
 using SqlSugar;
-using System;
 using NewWords.Api.Enums; // Import the enum namespace
 
 namespace NewWords.Api.Entities

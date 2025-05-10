@@ -1,7 +1,5 @@
 using NewWords.Api.Models.DTOs.Vocabulary;
 using NewWords.Api.Enums;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace NewWords.Api.Services
 {
