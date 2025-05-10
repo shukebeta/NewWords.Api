@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace NewWords.Api.Controllers;
 
-// Ensure [Authorize] attribute if settings are user-specific and require login
 [Authorize]
 public class SettingsController(
     IMapper mapper,

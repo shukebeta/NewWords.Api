@@ -1,108 +1,67 @@
-using System.Security.Claims;
+using Api.Framework.Models;
+using Api.Framework.Result;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using NewWords.Api.Enums;
-using NewWords.Api.Models.DTOs.Vocabulary;
+using NewWords.Api.Entities;
 using NewWords.Api.Services;
-using Api.Framework.Result;
+using NewWords.Api.Models.DTOs.Vocabulary;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers
 {
     [Authorize]
-    public class VocabularyController(IVocabularyService vocabService) : BaseController
+    public class VocabularyController(IVocabularyService vocabularyService, ICurrentUser currentUser)
+        : BaseController
     {
         /// <summary>
-        /// Adds a new word for the user.
+        /// Retrieves a paginated list of the current user's words.
         /// </summary>
-        /// <param name="addDto">The word details to add.</param>
-        /// <returns>The added word details.</returns>
-        [HttpPost]
-        public async Task<ApiResult<UserWordDto>> AddWord([FromBody] AddWordRequestDto addDto)
-        {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<UserWordDto>(default, "Invalid user ID.");
-
-            var resultDto = await vocabService.AddWordAsync(userId, addDto);
-            if (resultDto == null)
-            {
-                throw new Exception("Failed to add word.");
-            }
-            return new SuccessfulResult<UserWordDto>(resultDto, "Word added successfully.");
-        }
-
-        /// <summary>
-        /// Retrieves a paginated list of user words, optionally filtered by status.
-        /// </summary>
-        /// <param name="status">Optional status filter for words.</param>
-        /// <param name="page">Page number for pagination.</param>
-        /// <param name="pageSize">Number of items per page.</param>
-        /// <returns>Paginated list of user words.</returns>
+        /// <param name="pageSize">Number of words per page.</param>
+        /// <param name="pageNumber">Page number to retrieve.</param>
+        /// <returns>Paginated list of words.</returns>
         [HttpGet]
-        public async Task<ApiResult<object>> GetWords(WordStatus? status, int page = 1, int pageSize = 10)
+        [EnforcePageSizeLimit(50)]
+        public async Task<ApiResult<PageData<Word>>> List(int pageSize = 10, int pageNumber = 1)
         {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!long.TryParse(userIdString, out var userId)) return new FailedResult<object>(default, "Invalid user ID.");
-
-            pageSize = Math.Clamp(pageSize, 1, 50);
-
-            var words = await vocabService.GetUserWordsAsync(userId, status, page, pageSize);
-            var totalCount = await vocabService.GetUserWordsCountAsync(userId, status);
-
-            return new SuccessfulResult<object>(new { TotalCount = totalCount, Page = page, PageSize = pageSize, Items = words }, "User words retrieved successfully.");
-        }
-
-        /// <summary>
-        /// Retrieves details of a specific user word.
-        /// </summary>
-        /// <param name="userWordId">The ID of the word to retrieve.</param>
-        /// <returns>Details of the specified word.</returns>
-        [HttpGet("{userWordId:int}")]
-        public async Task<ApiResult<UserWordDto>> GetUserWordDetails(int userWordId)
-        {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<UserWordDto>(default, "Invalid user ID.");
-
-            var wordDetails = await vocabService.GetUserWordDetailsAsync(userId, userWordId);
-            return wordDetails == null ? new FailedResult<UserWordDto>(default, "Word not found.") : new SuccessfulResult<UserWordDto>(wordDetails, "Word details retrieved successfully.");
-        }
-
-        /// <summary>
-        /// Updates the status of a specific user word.
-        /// </summary>
-        /// <param name="userWordId">The ID of the word to update.</param>
-        /// <param name="updateDto">The new status for the word.</param>
-        /// <returns>Confirmation of status update.</returns>
-        [HttpPut("{userWordId:int}/status")]
-        public async Task<ApiResult<string>> UpdateUserWordStatus(int userWordId, [FromBody] UpdateWordStatusRequestDto updateDto)
-        {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<string>(default, "Invalid user ID.");
-
-            var success = await vocabService.UpdateWordStatusAsync(userId, userWordId, updateDto.NewStatus);
-            if (!success)
+            var userId = currentUser.Id;
+            if (userId == 0)
             {
-                return new FailedResult<string>(default, "Word entry not found or update failed.");
+                throw new ArgumentException("User not authenticated or ID not found.");
             }
-            return new SuccessfulResult<string>("Word status updated successfully.");
+
+            var words = await vocabularyService.GetUserWordsAsync(userId, pageSize, pageNumber);
+            return new SuccessfulResult<PageData<Word>>(words);
         }
 
         /// <summary>
-        /// Deletes a specific user word.
+        /// Adds a new word to the current user's list.
         /// </summary>
-        /// <param name="userWordId">The ID of the word to delete.</param>
-        /// <returns>Confirmation of deletion.</returns>
-        [HttpDelete("{userWordId:int}")]
-        public async Task<ApiResult<string>> DeleteUserWord(int userWordId)
+        /// <param name="addWordRequestDto">The word details to add.</param>
+        /// <returns>The added word.</returns>
+        [HttpPost]
+        public async Task<ApiResult<Word>> Add(AddWordRequestDto addWordRequestDto)
         {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out var userId)) return new FailedResult<string>(default, "Invalid user ID.");
-
-            var success = await vocabService.DeleteWordAsync(userId, userWordId);
-            if (!success)
+            var userId = currentUser.Id;
+            if (userId == 0)
             {
-                return new FailedResult<string>(default, "Word entry not found or delete failed.");
+                throw new ArgumentException("User not authenticated or ID not found.");
             }
-            return new SuccessfulResult<string>("Word deleted successfully.");
+
+            var wordToAdd = new Word
+            {
+                WordText = addWordRequestDto.WordText,
+                WordLanguage = addWordRequestDto.WordLanguage,
+                ExplanationLanguage = addWordRequestDto.ExplanationLanguage,
+                MarkdownExplanation = addWordRequestDto.MarkdownExplanation,
+                Pronunciation = addWordRequestDto.Pronunciation,
+                Definitions = addWordRequestDto.Definitions,
+                Examples = addWordRequestDto.Examples,
+                ProviderModelName = addWordRequestDto.ProviderModelName,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+
+            var addedWord = await vocabularyService.AddUserWordAsync(userId, wordToAdd);
+            return new SuccessfulResult<Word>(addedWord);
         }
     }
 }
