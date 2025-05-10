@@ -6,17 +6,19 @@ using NewWords.Api.Models.DTOs;
 using NewWords.Api.Entities;
 using NewWords.Api.Services.interfaces;
 using Microsoft.AspNetCore.Mvc;
-using Api.Framework.Helper; // Added for CustomExceptionHelper
+using Api.Framework.Helper;
+using Microsoft.AspNetCore.Authorization;
 
 namespace NewWords.Api.Controllers;
 
 // Ensure [Authorize] attribute if settings are user-specific and require login
-// [Authorize]
+[Authorize]
 public class SettingsController(
     IMapper mapper,
     ICurrentUser currentUser,
-    IRepositoryBase<UserSettings> userSettingsRepository
-) : BaseController // Assuming BaseController exists and is appropriate
+    IRepositoryBase<UserSettings> userSettingsRepository,
+    IConfiguration configuration)
+    : BaseController
 {
     [HttpGet]
     public async Task<ApiResult<List<UserSettingsDto>>> GetAll()
@@ -33,7 +35,7 @@ public class SettingsController(
             {
                 if (userSettingDict.ContainsKey(setting.SettingName))
                 {
-                     userSettingDict[setting.SettingName] = setting.SettingValue;
+                    userSettingDict[setting.SettingName] = setting.SettingValue;
                 }
             }
 
@@ -89,5 +91,13 @@ public class SettingsController(
         }
 
         return result ? new SuccessfulResult<bool>(true) : new FailedResult<bool>(false, "0 rows affected");
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public ApiResult<List<LanguageDto>> Languages()
+    {
+        var languages = configuration.GetSection("SupportedLanguages").Get<List<LanguageDto>>();
+        return new SuccessfulResult<List<LanguageDto>>(languages ?? []);
     }
 }
