@@ -20,7 +20,6 @@ namespace NewWords.Api.Controllers
         /// <param name="pageNumber">Page number to retrieve.</param>
         /// <returns>Paginated list of words.</returns>
         [HttpGet]
-        [EnforcePageSizeLimit(50)]
         public async Task<ApiResult<PageData<WordExplanation>>> List(int pageSize = 10, int pageNumber = 1)
         {
             var userId = currentUser.Id;
@@ -36,10 +35,10 @@ namespace NewWords.Api.Controllers
         /// <summary>
         /// Adds a new word to the current user's list.
         /// </summary>
-        /// <param name="addWordRequestDto">The word details to add.</param>
+        /// <param name="addWordRequest">The word details to add.</param>
         /// <returns>The added word explanation.</returns>
         [HttpPost]
-        public async Task<ApiResult<WordExplanation>> Add(AddWordRequestDto addWordRequestDto)
+        public async Task<ApiResult<WordExplanation>> Add(AddWordRequest addWordRequest)
         {
             var userId = currentUser.Id;
             if (userId == 0)
@@ -51,9 +50,9 @@ namespace NewWords.Api.Controllers
 
             var addedWordExplanation = await vocabularyService.AddUserWordAsync(
                 userId,
-                addWordRequestDto.WordText,
-                addWordRequestDto.WordLanguage,
-                addWordRequestDto.ExplanationLanguage
+                addWordRequest.WordText,
+                addWordRequest.WordLanguage,
+                addWordRequest.ExplanationLanguage
             );
 
             return new SuccessfulResult<WordExplanation>(addedWordExplanation);

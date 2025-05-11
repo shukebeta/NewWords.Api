@@ -6,7 +6,7 @@ namespace NewWords.Api.Services
 {
     public interface IVocabularyService
     {
-        Task<PageData<WordExplanation>> GetUserWordsAsync(long userId, int pageSize, int pageNumber);
-        Task<WordExplanation> AddUserWordAsync(long userId, string wordText, string wordLanguage, string explanationLanguage);
+        Task<PageData<WordExplanation>> GetUserWordsAsync(int userId, int pageSize, int pageNumber);
+        Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string wordLanguage, string explanationLanguage);
     }
 }

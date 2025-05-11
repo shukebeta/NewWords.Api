@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace NewWords.Api.Models.DTOs.Vocabulary
 {
-    public class AddWordRequestDto
+    public class AddWordRequest
     {
         [Required]
         [StringLength(255)]

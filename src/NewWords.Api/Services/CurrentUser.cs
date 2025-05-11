@@ -5,7 +5,7 @@ namespace NewWords.Api.Services;
 
 public class CurrentUser(IHttpContextAccessor httpContextAccessor) : ICurrentUser
 {
-    public long Id => string.IsNullOrEmpty(GetClaimValue(ClaimTypes.NameIdentifier)) ? 0 : long.Parse(GetClaimValue(ClaimTypes.NameIdentifier));
+    public int Id => string.IsNullOrEmpty(GetClaimValue(ClaimTypes.NameIdentifier)) ? 0 : int.Parse(GetClaimValue(ClaimTypes.NameIdentifier));
     public string Username => GetClaimValue(ClaimTypes.Name);
     public string Email => GetClaimValue(ClaimTypes.Email);
 
