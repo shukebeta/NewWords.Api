@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -e
+
+if [ $# != 2 ] ; then
+    echo "USAGE: $0 dbname tablename"
+    echo " e.g.: $0 IDServer AspNetUsers"
+    exit 1;
+fi
+
+script_dir="$(dirname "$(readlink -f "$0")")"
+
+# Define the absolute path for the backup file
+document_path="$script_dir/../documents/database"
+
+mkdir -p $document_path/$1
+
+mysqlshow --defaults-group-suffix=Local $1 $2 \
+  | sed 's/+/|/g' \
+  | sed '1,2d' \
+  | sed '$d' \
+  | awk -F"[|]" '{print $2"|"$3"|"$5"|"$7"|"$10}' \
+  | sed 's/ *$//g' \
+  | sed '1i# Database: '$1' Table: '$2'\n'\
+  | tee  $document_path/$1/$2.md
+
+mysql --table -e "SHOW INDEX FROM ${1}.${2}"\
+  | sed 's/+/|/g' \
+  | sed -e '1d' -e '$d' \
+  | awk -F"[|]" '{print $4"|"$6"|"$5"|"$3"|"$12"|"$15}' \
+  | sed 's/ *$//g' \
+  | sed '1i\\n## Indexes: \n'\
+  | tee -a $document_path/$1/$2.md

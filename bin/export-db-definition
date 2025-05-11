@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Get the absolute path of the script's directory
+# script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Resolve the symbolic link and get the absolute path of the script's directory
+script_dir="$(dirname "$(readlink -f "$0")")"
+
+# Define the absolute path for the backup file
+backupFile="$script_dir/../documents/database/all-db-definition.sql"
+
+# Dump the database with the absolute path for the backup file
+mysqldump --defaults-group-suffix=aiven -d --databases NewWords | sed -e 's/ AUTO_INCREMENT=[0-9]*//g' -e '$d' > "$backupFile"

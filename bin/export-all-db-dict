@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -ex
+
+databases=(NewWords)
+
+for db in "${databases[@]}";
+do
+	list=`mysql -e "use ${db}; show tables;"|sed '1d'`
+	while IFS= read -r line; do
+		export-db-dict $db $line
+	done <<< "$list"
+done;

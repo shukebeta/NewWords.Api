@@ -21,7 +21,7 @@ namespace NewWords.Api.Controllers
         /// <returns>Paginated list of words.</returns>
         [HttpGet]
         [EnforcePageSizeLimit(50)]
-        public async Task<ApiResult<PageData<Word>>> List(int pageSize = 10, int pageNumber = 1)
+        public async Task<ApiResult<PageData<WordExplanation>>> List(int pageSize = 10, int pageNumber = 1)
         {
             var userId = currentUser.Id;
             if (userId == 0)
@@ -30,38 +30,33 @@ namespace NewWords.Api.Controllers
             }
 
             var words = await vocabularyService.GetUserWordsAsync(userId, pageSize, pageNumber);
-            return new SuccessfulResult<PageData<Word>>(words);
+            return new SuccessfulResult<PageData<WordExplanation>>(words);
         }
 
         /// <summary>
         /// Adds a new word to the current user's list.
         /// </summary>
         /// <param name="addWordRequestDto">The word details to add.</param>
-        /// <returns>The added word.</returns>
+        /// <returns>The added word explanation.</returns>
         [HttpPost]
-        public async Task<ApiResult<Word>> Add(AddWordRequestDto addWordRequestDto)
+        public async Task<ApiResult<WordExplanation>> Add(AddWordRequestDto addWordRequestDto)
         {
             var userId = currentUser.Id;
             if (userId == 0)
             {
+                // This should ideally be handled by [Authorize] and a proper authentication middleware
+                // returning a 401, but for now, an ArgumentException is thrown if ICurrentUser somehow has Id=0.
                 throw new ArgumentException("User not authenticated or ID not found.");
             }
 
-            var wordToAdd = new Word
-            {
-                WordText = addWordRequestDto.WordText,
-                WordLanguage = addWordRequestDto.WordLanguage,
-                ExplanationLanguage = addWordRequestDto.ExplanationLanguage,
-                MarkdownExplanation = addWordRequestDto.MarkdownExplanation,
-                Pronunciation = addWordRequestDto.Pronunciation,
-                Definitions = addWordRequestDto.Definitions,
-                Examples = addWordRequestDto.Examples,
-                ProviderModelName = addWordRequestDto.ProviderModelName,
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            };
+            var addedWordExplanation = await vocabularyService.AddUserWordAsync(
+                userId,
+                addWordRequestDto.WordText,
+                addWordRequestDto.WordLanguage,
+                addWordRequestDto.ExplanationLanguage
+            );
 
-            var addedWord = await vocabularyService.AddUserWordAsync(userId, wordToAdd);
-            return new SuccessfulResult<Word>(addedWord);
+            return new SuccessfulResult<WordExplanation>(addedWordExplanation);
         }
     }
 }

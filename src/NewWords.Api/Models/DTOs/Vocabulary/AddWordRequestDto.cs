@@ -15,14 +15,5 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
         [Required]
         [StringLength(20)]
         public string ExplanationLanguage { get; set; } = string.Empty; // User's native language for the explanation (e.g., "zh-CN")
-
-        [Required]
-        public string MarkdownExplanation { get; set; } = string.Empty;
-        
-        // Optional fields from Word entity that might be provided at creation
-        public string? Pronunciation { get; set; }
-        public string? Definitions { get; set; } // JSON or structured text
-        public string? Examples { get; set; }    // JSON or structured text
-        public string? ProviderModelName { get; set; }
     }
 }

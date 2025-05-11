@@ -1,23 +1,49 @@
 using Api.Framework.Models;
+using Api.Framework.Extensions; // For ToUnixTimeSeconds
 using NewWords.Api.Entities;
 using SqlSugar;
+using LLM.Services; // For TranslationAndExplanationService
+using LLM.Configuration; // For LlmConfigurationService and AgentConfig
+using Microsoft.Extensions.Logging; // Added ILogger
+using System; // Added for Exception and ArgumentException
+using System.Linq; // Added for Linq operations like .First() and .Any()
+using System.Threading.Tasks; // Added for Task
 
 namespace NewWords.Api.Services
 {
-    public class VocabularyService(ISqlSugarClient db, IUserService userService, ILogger<VocabularyService> logger)
-        : IVocabularyService
+    public class VocabularyService : IVocabularyService
     {
-        public async Task<PageData<Word>> GetUserWordsAsync(long userId, int pageSize, int pageNumber)
+        private readonly ISqlSugarClient _db;
+        private readonly IUserService _userService; // Kept for potential future use, though not in current AddUserWordAsync happy path
+        private readonly TranslationAndExplanationService _translationAndExplanationService;
+        private readonly LlmConfigurationService _llmConfigurationService;
+        private readonly ILogger<VocabularyService> _logger;
+
+        public VocabularyService(
+            ISqlSugarClient db,
+            IUserService userService,
+            TranslationAndExplanationService translationAndExplanationService,
+            LlmConfigurationService llmConfigurationService,
+            ILogger<VocabularyService> logger)
+        {
+            _db = db;
+            _userService = userService;
+            _translationAndExplanationService = translationAndExplanationService;
+            _llmConfigurationService = llmConfigurationService;
+            _logger = logger;
+        }
+
+        public async Task<PageData<WordExplanation>> GetUserWordsAsync(long userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
-            var pagedWords = await db.Queryable<UserWordEntity>()
-                .LeftJoin<Word>((uwe, w) => uwe.WordId == w.WordId)
+            var pagedWords = await _db.Queryable<UserWordEntity>()
+                .LeftJoin<WordExplanation>((uwe, we) => uwe.WordExplanationId == we.WordExplanationId)
                 .Where(uwe => uwe.UserId == userId)
                 .OrderBy(uwe => uwe.CreatedAt, OrderByType.Desc)
-                .Select((uwe, w) => w)
+                .Select((uwe, we) => we)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
-            return new PageData<Word>
+            return new PageData<WordExplanation>
             {
                 DataList = pagedWords,
                 TotalCount = totalCount,
@@ -26,86 +52,95 @@ namespace NewWords.Api.Services
             };
         }
 
-        public async Task<Word> AddUserWordAsync(long userId, Word wordToAdd)
+        public async Task<WordExplanation> AddUserWordAsync(long userId, string wordText, string wordLanguage, string explanationLanguage)
         {
-            var userProfile = await userService.GetUserProfileAsync(userId);
-            if (userProfile == null)
-            {
-                throw new Exception("User profile not found.");
-            }
-            var userLearningLanguage = userProfile.CurrentLearningLanguage;
+            // Basic input validation (can be expanded)
+            if (string.IsNullOrWhiteSpace(wordText))
+                throw new ArgumentException("Word text cannot be empty.", nameof(wordText));
+            if (string.IsNullOrWhiteSpace(wordLanguage))
+                throw new ArgumentException("Word language cannot be empty.", nameof(wordLanguage));
+            if (string.IsNullOrWhiteSpace(explanationLanguage))
+                throw new ArgumentException("Explanation language cannot be empty.", nameof(explanationLanguage));
 
-            if (!string.Equals(wordToAdd.WordLanguage, userLearningLanguage, StringComparison.OrdinalIgnoreCase))
-            {
-                // This check is to prevent adding a word in a language different from the user's learning language,
-                // unless it already exists in the WordCollection for their learning language (e.g. user error in input).
-                // The frontend is expected to handle confirmation if this exception is thrown.
-                var existingWordInLearningLanguage = await db.Queryable<WordCollection>()
-                    .Where(wc => wc.WordText == wordToAdd.WordText && wc.Language == userLearningLanguage && wc.DeletedAt == null)
-                    .AnyAsync();
-
-                if (!existingWordInLearningLanguage)
-                {
-                     throw new ArgumentException($"The entered word's language ('{wordToAdd.WordLanguage}') does not match your learning language ('{userLearningLanguage}'). Please confirm the word and its language.");
-                }
-            }
-
-            // If ExplanationLanguage is not provided or doesn't match user's native language, log a warning but proceed.
-            // The primary purpose is to ensure an explanation language is set, defaulting to user's native language.
-            if (string.IsNullOrWhiteSpace(wordToAdd.ExplanationLanguage)) {
-                wordToAdd.ExplanationLanguage = userProfile.NativeLanguage;
-            } else if (!string.Equals(wordToAdd.ExplanationLanguage, userProfile.NativeLanguage, StringComparison.OrdinalIgnoreCase)) {
-                 logger.LogWarning($"Word explanation language '{wordToAdd.ExplanationLanguage}' for user {userId} does not match user's native language '{userProfile.NativeLanguage}'. Proceeding with provided explanation language.");
-            }
+            WordExplanation explanationToReturn;
 
             try
             {
-                await db.Ado.BeginTranAsync();
+                await _db.Ado.BeginTranAsync();
 
-                var existingWordExplanation = await db.Queryable<Word>()
-                    .Where(w => w.WordText == wordToAdd.WordText &&
-                                w.WordLanguage == wordToAdd.WordLanguage &&
-                                w.ExplanationLanguage == wordToAdd.ExplanationLanguage)
+                // 1. Handle WordCollection
+                var wordInCollection = await _db.Queryable<WordCollection>()
+                    .Where(wc => wc.WordText == wordText && wc.Language == wordLanguage && wc.DeletedAt == null)
                     .SingleAsync();
 
-                int wordExplanationId;
-
-                if (existingWordExplanation != null)
-                {
-                    wordExplanationId = existingWordExplanation.WordId;
-                }
-                else
-                {
-                    wordToAdd.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    wordExplanationId = await db.Insertable(wordToAdd).ExecuteReturnIdentityAsync();
-                    wordToAdd.WordId = wordExplanationId;
-                }
-
-                var wordInCollection = await db.Queryable<WordCollection>()
-                    .Where(wc => wc.WordText == wordToAdd.WordText && wc.Language == wordToAdd.WordLanguage && wc.DeletedAt == null)
-                    .SingleAsync();
+                long wordCollectionId;
+                long currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
 
                 if (wordInCollection != null)
                 {
-                    await db.Updateable<WordCollection>()
-                        .SetColumns(it => new WordCollection { QueryCount = it.QueryCount + 1, UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() })
-                        .Where(it => it.Id == wordInCollection.Id)
+                    wordCollectionId = wordInCollection.Id;
+                    await _db.Updateable<WordCollection>()
+                        .SetColumns(it => new WordCollection { QueryCount = it.QueryCount + 1, UpdatedAt = currentTime })
+                        .Where(it => it.Id == wordCollectionId)
                         .ExecuteCommandAsync();
                 }
                 else
                 {
                     var newCollectionWord = new WordCollection
                     {
-                        WordText = wordToAdd.WordText,
-                        Language = wordToAdd.WordLanguage,
+                        WordText = wordText,
+                        Language = wordLanguage,
                         QueryCount = 1,
-                        CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        CreatedAt = currentTime,
+                        UpdatedAt = currentTime // Set UpdatedAt on creation as well
                     };
-                    await db.Insertable(newCollectionWord).ExecuteCommandAsync();
+                    wordCollectionId = await _db.Insertable(newCollectionWord).ExecuteReturnBigIdentityAsync();
                 }
 
-                var userWordLink = await db.Queryable<UserWordEntity>()
-                    .Where(uw => uw.UserId == userId && uw.WordId == wordExplanationId)
+                // 2. Handle WordExplanation (Explanation Cache)
+                explanationToReturn = await _db.Queryable<WordExplanation>()
+                    .Where(we => we.WordCollectionId == wordCollectionId && we.ExplanationLanguage == explanationLanguage)
+                    .SingleAsync();
+
+                if (explanationToReturn == null)
+                {
+                    // No cached explanation, call AI Service
+                    var agentConfigs = _llmConfigurationService.GetAgentConfigs();
+                    if (agentConfigs == null || !agentConfigs.Any())
+                    {
+                        await _db.Ado.RollbackTranAsync();
+                        _logger.LogError("No LLM agents configured.");
+                        throw new InvalidOperationException("No LLM agents configured. Cannot fetch word explanation.");
+                    }
+                    var agentConfig = agentConfigs.First(); // Happy path: use the first agent
+
+                    var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(wordText, explanationLanguage, agentConfig);
+
+                    if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
+                    {
+                        await _db.Ado.RollbackTranAsync();
+                        _logger.LogError($"Failed to get explanation from AI for word '{wordText}': {explanationResult.ErrorMessage}");
+                        throw new Exception($"Failed to get explanation from AI: {explanationResult.ErrorMessage ?? "AI returned empty markdown."}");
+                    }
+
+                    var newExplanation = new WordExplanation
+                    {
+                        WordCollectionId = wordCollectionId,
+                        WordText = wordText, // Denormalized
+                        WordLanguage = wordLanguage, // Denormalized
+                        ExplanationLanguage = explanationLanguage,
+                        MarkdownExplanation = explanationResult.Markdown,
+                        ProviderModelName = explanationResult.ModelName,
+                        CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
+                    };
+                    var newExplanationId = await _db.Insertable(newExplanation).ExecuteReturnBigIdentityAsync();
+                    newExplanation.WordExplanationId = newExplanationId;
+                    explanationToReturn = newExplanation;
+                }
+
+                // 3. Handle UserWord Link
+                var userWordLink = await _db.Queryable<UserWordEntity>()
+                    .Where(uw => uw.UserId == userId && uw.WordExplanationId == explanationToReturn.WordExplanationId)
                     .SingleAsync();
 
                 if (userWordLink == null)
@@ -113,22 +148,21 @@ namespace NewWords.Api.Services
                     var newUserWord = new UserWordEntity
                     {
                         UserId = userId,
-                        WordId = wordExplanationId,
-                        Status = 0,
-                        CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        WordExplanationId = explanationToReturn.WordExplanationId,
+                        Status = 0, // Default status
+                        CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
                     };
-                    await db.Insertable(newUserWord).ExecuteCommandAsync();
+                    await _db.Insertable(newUserWord).ExecuteCommandAsync();
                 }
 
-                await db.Ado.CommitTranAsync();
-                // Fetch the definitive state of the word explanation from the DB to return.
-                return await db.Queryable<Word>().InSingleAsync(wordExplanationId);
+                await _db.Ado.CommitTranAsync();
+                return explanationToReturn;
             }
             catch (Exception ex)
             {
-                await db.Ado.RollbackTranAsync();
-                logger.LogError(ex, $"Error adding word for user {userId}: {wordToAdd.WordText}");
-                throw;
+                await _db.Ado.RollbackTranAsync();
+                _logger.LogError(ex, $"Error in AddUserWordAsync for user {userId}, word '{wordText}'.");
+                throw; // Re-throw the exception to be handled by global error handler or controller
             }
         }
     }
