@@ -182,7 +182,7 @@ namespace LLM.Services
 
         private void ValidateInput(string inputText, string targetLanguage)
         {
-             if (string.IsNullOrEmpty(inputText))
+            if (string.IsNullOrEmpty(inputText))
             {
                 throw new ArgumentException("Input text cannot be empty or null.", nameof(inputText));
             }
@@ -197,7 +197,7 @@ namespace LLM.Services
             var userPrompt = $@"You are a language learning assistant that provides detailed explanations when given a word or phrase. When I provide a word or phrase in any language and specify my target Language ""{targetLanguage}"", please respond with:
 
 1. The word/phrase with its IPA Transcription
-2. Any relevant grammatical information (tense, part of speech, etc.) in {targetLanguage}
+2. Any relevant grammatical information (tense, part of speech, etc.) in ""{targetLanguage}""
 3. A clear definition
 4. 2-3 example sentences using the word/phrase in original language with translations
 5. 3-4 related words/synonyms/antonyms with pronunciations and translations and one example sentence
