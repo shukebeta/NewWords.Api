@@ -15,7 +15,7 @@ document_path="$script_dir/../documents/database"
 
 mkdir -p $document_path/$1
 
-mysqlshow --defaults-group-suffix=Local $1 $2 \
+mysqlshow --defaults-group-suffix=aiven $1 $2 \
   | sed 's/+/|/g' \
   | sed '1,2d' \
   | sed '$d' \
@@ -24,7 +24,7 @@ mysqlshow --defaults-group-suffix=Local $1 $2 \
   | sed '1i# Database: '$1' Table: '$2'\n'\
   | tee  $document_path/$1/$2.md
 
-mysql --table -e "SHOW INDEX FROM ${1}.${2}"\
+mysql --defaults-group-suffix=aiven --table -e "SHOW INDEX FROM ${1}.${2}"\
   | sed 's/+/|/g' \
   | sed -e '1d' -e '$d' \
   | awk -F"[|]" '{print $4"|"$6"|"$5"|"$3"|"$12"|"$15}' \

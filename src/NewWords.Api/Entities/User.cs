@@ -12,7 +12,7 @@ namespace NewWords.Api.Entities
         /// Unique identifier for the user (Primary Key, Auto-Increment).
         /// </summary>
         [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
-        public long UserId { get; set; }
+        public int Id { get; set; }
 
         /// <summary>
         /// User's email address (Unique, Required). Used for login.

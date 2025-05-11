@@ -37,7 +37,7 @@ namespace NewWords.Api.Services
         {
             RefAsync<int> totalCount = 0;
             var pagedWords = await _db.Queryable<UserWordEntity>()
-                .LeftJoin<WordExplanation>((uwe, we) => uwe.WordExplanationId == we.WordExplanationId)
+                .LeftJoin<WordExplanation>((uwe, we) => uwe.WordExplanationId == we.Id)
                 .Where(uwe => uwe.UserId == userId)
                 .OrderBy(uwe => uwe.CreatedAt, OrderByType.Desc)
                 .Select((uwe, we) => we)
@@ -134,13 +134,13 @@ namespace NewWords.Api.Services
                         CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
                     };
                     var newExplanationId = await _db.Insertable(newExplanation).ExecuteReturnBigIdentityAsync();
-                    newExplanation.WordExplanationId = newExplanationId;
+                    newExplanation.Id = newExplanationId;
                     explanationToReturn = newExplanation;
                 }
 
                 // 3. Handle UserWord Link
                 var userWordLink = await _db.Queryable<UserWordEntity>()
-                    .Where(uw => uw.UserId == userId && uw.WordExplanationId == explanationToReturn.WordExplanationId)
+                    .Where(uw => uw.UserId == userId && uw.WordExplanationId == explanationToReturn.Id)
                     .SingleAsync();
 
                 if (userWordLink == null)
@@ -148,7 +148,7 @@ namespace NewWords.Api.Services
                     var newUserWord = new UserWordEntity
                     {
                         UserId = userId,
-                        WordExplanationId = explanationToReturn.WordExplanationId,
+                        WordExplanationId = explanationToReturn.Id,
                         Status = 0, // Default status
                         CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
                     };

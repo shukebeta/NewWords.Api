@@ -9,7 +9,7 @@ namespace NewWords.Api.Repositories
     {
         public async Task<UserWord?> GetByUserAndWordIdAsync(long userId, int wordId)
         {
-            return await GetFirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordId == wordId);
+            return await GetFirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordExplanationId == wordId);
         }
 
         public async Task<List<UserWord>> GetUserWordsAsync(long userId, WordStatus? status, int page, int pageSize)

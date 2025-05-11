@@ -3,12 +3,15 @@ using LLM.Services;
 using Api.Framework.Result;
 using LLM.Models;
 using Microsoft.AspNetCore.Authorization;
-using NewWords.Api.Repositories; // Added
-using SqlSugar; // Added
-using NewWords.Api.Entities; // Added
-using LLM.Configuration; // Added for LlmConfigurationService
-
-// Added for HashSet
+using NewWords.Api.Repositories;
+using SqlSugar;
+using NewWords.Api.Entities;
+using LLM.Configuration;
+using System.Collections.Generic; // Added for HashSet
+using System.Linq; // Added for Linq
+using System.Threading.Tasks; // Added for Task
+using Api.Framework.Extensions; // Added for ToUnixTimeSeconds
+using System; // Added for Exception
 
 namespace NewWords.Api.Controllers;
 
@@ -20,337 +23,292 @@ public class LlmController : BaseController
 {
     private readonly LanguageRecognitionService _languageRecognitionService;
     private readonly TranslationAndExplanationService _translationAndExplanationService;
-    private readonly LlmConfigurationService _llmConfigService; // Added for accessing agent configurations
-    private readonly ISqlSugarClient _dbClient; // Added
-    private readonly IWordRepository _wordRepository; // Added
-    private readonly IWordCollectionRepository _wordCollectionRepository; // Added
-    private readonly ILogger<LlmController> _logger; // Added
+    private readonly LlmConfigurationService _llmConfigService;
+    private readonly ISqlSugarClient _dbClient;
+    private readonly IWordRepository _wordExplanationRepository; // Renamed to reflect it handles WordExplanation
+    private readonly IWordCollectionRepository _wordCollectionRepository;
+    private readonly ILogger<LlmController> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LlmController"/> class.
-    /// </summary>
-    /// <param name="languageRecognitionService">The service for language recognition.</param>
-    /// <param name="translationAndExplanationService">The service for word explanations and translations.</param>
-    /// <param name="llmConfigService">The service for accessing LLM configuration.</param>
-    /// <param name="dbClient">The SQLSugar client.</param>
-    /// <param name="wordRepository">The repository for Words.</param>
-    /// <param name="wordCollectionRepository">The repository for WordCollection.</param>
-    /// <param name="logger">The logger instance.</param>
     public LlmController(
         LanguageRecognitionService languageRecognitionService,
         TranslationAndExplanationService translationAndExplanationService,
-        LlmConfigurationService llmConfigService, // Added
-        ISqlSugarClient dbClient, // Added
-        IWordRepository wordRepository, // Added
-        IWordCollectionRepository wordCollectionRepository, // Added
-        ILogger<LlmController> logger) // Added
+        LlmConfigurationService llmConfigService,
+        ISqlSugarClient dbClient,
+        IWordRepository wordExplanationRepository, // Renamed
+        IWordCollectionRepository wordCollectionRepository,
+        ILogger<LlmController> logger)
     {
         _languageRecognitionService = languageRecognitionService;
         _translationAndExplanationService = translationAndExplanationService;
-        _llmConfigService = llmConfigService; // Added
-        _dbClient = dbClient; // Added
-        _wordRepository = wordRepository; // Added
-        _wordCollectionRepository = wordCollectionRepository; // Added
-        _logger = logger; // Added
+        _llmConfigService = llmConfigService;
+        _dbClient = dbClient;
+        _wordExplanationRepository = wordExplanationRepository; // Renamed
+        _wordCollectionRepository = wordCollectionRepository;
+        _logger = logger;
     }
 
-    /// <summary>
-    /// Recognizes the language of the provided text.
-    /// </summary>
-    /// <param name="text">The text to analyze for language recognition.</param>
-    /// <returns>A result containing the recognized languages with confidence scores.</returns>
-    [HttpGet("RecognizeLanguage")] // Added route template for clarity
+    [HttpGet("RecognizeLanguage")]
     public async Task<ApiResult> RecognizeLanguage([FromQuery] string text)
     {
         if (string.IsNullOrEmpty(text))
         {
             return Fail("Text parameter is required.");
         }
-
         var result = await _languageRecognitionService.RecognizeLanguageAsync(text);
         return new SuccessfulResult<LanguageRecognitionResult>(result);
     }
 
-    // /// <summary>
-    // /// Provides a detailed explanation of the provided word or phrase in the target language. (OLD METHOD - COMMENTED OUT)
-    // /// </summary>
-    // /// <param name="text">The word or phrase to explain.</param>
-    // /// <param name="targetLanguage">The language in which to provide the explanation.</param>
-    // /// <returns>A result containing the detailed explanation including phonetic transcription.</returns>
-    // [HttpPost]
-    // public async Task<ApiResult> ExplainWord([FromQuery] string text, [FromQuery] string targetLanguage)
-    // {
-    //     if (string.IsNullOrEmpty(text))
-    //     {
-    //         return Fail("Text parameter is required.");
-    //     }
-    //     if (string.IsNullOrEmpty(targetLanguage))
-    //     {
-    //         return Fail("Target language parameter is required.");
-    //     }
-    //
-    //     // This method no longer exists in the service
-    //     // var result = await _translationAndExplanationService.ExplainWordAsync(text, targetLanguage);
-    //     // return new SuccessfulResult<WordExplanationResult>(result);
-    //     return Fail("Endpoint deprecated. Use ExplainWordMarkdown or ExplainWordStructured.");
-    // }
-
-    /// <summary>
-    /// Provides a Markdown-formatted explanation of the provided word or phrase.
-    /// </summary>
-    /// <param name="text">The word or phrase to explain.</param>
-    /// <param name="targetLanguage">The language for the explanation.</param>
-    /// <returns>A result containing the Markdown explanation string.</returns>
-    [HttpGet] // New endpoint
+    [HttpGet("ExplainWordMarkdown")]
     public async Task<ApiResult> ExplainWordMarkdown([FromQuery] string text, [FromQuery] string targetLanguage)
     {
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text)) return Fail("Text parameter is required.");
+        if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
+
+        var agentConfigs = _llmConfigService.GetAgentConfigs();
+        if (agentConfigs == null || !agentConfigs.Any())
         {
-            return Fail("Text parameter is required.");
+            return Fail("No LLM providers are configured.");
         }
-        if (string.IsNullOrEmpty(targetLanguage))
+        var agent = agentConfigs.First();
+        _logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
+
+        var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage, agent);
+
+        if (explanationResult.IsSuccess && explanationResult.Markdown != null)
         {
-            return Fail("Target language parameter is required.");
+            return new SuccessfulResult<string>(explanationResult.Markdown);
         }
-
-
-                // Get the list of agent configurations
-                var agentConfigs = _llmConfigService.GetAgentConfigs();
-                if (agentConfigs == null || agentConfigs.Count == 0)
-                {
-                    return Fail("No LLM providers are configured.");
-                }
-
-                // For simplicity, try the first agent only for this endpoint
-                // In a full implementation, we could iterate through agents like in FillWordsTable
-                var agent = agentConfigs[0];
-                _logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
-
-                // Call the new service method for Markdown with the agent config
-                var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage, agent);
-
-                if (explanationResult.IsSuccess && explanationResult.Markdown != null)
-                {
-                    // Return the Markdown part if successful
-                    return new SuccessfulResult<string>(explanationResult.Markdown);
-                }
-                else
-                {
-                    // Return failure if the service couldn't get the explanation
-                    string errorMsg = explanationResult.ErrorMessage ?? "Unknown error";
-                    if (explanationResult.HttpStatusCode.HasValue)
-                    {
-                        errorMsg += $" (HTTP Status: {explanationResult.HttpStatusCode.Value})";
-                    }
-                    return Fail($"Could not retrieve explanation for '{text}': {errorMsg}");
-                }
+        else
+        {
+            string errorMsg = explanationResult.ErrorMessage ?? "Unknown error";
+            if (explanationResult.HttpStatusCode.HasValue)
+            {
+                errorMsg += $" (HTTP Status: {explanationResult.HttpStatusCode.Value})";
             }
-    /// <summary>
-    /// Provides structured linguistic details (IPA, translations, etc.) for the word or phrase.
-    /// </summary>
-    /// <param name="text">The word or phrase to analyze.</param>
-    /// <param name="targetLanguage">The language for the analysis.</param>
-    /// <returns>A result containing the structured WordExplanationResult object.</returns>
-    [HttpGet] // New endpoint
+            return Fail($"Could not retrieve explanation for '{text}': {errorMsg}");
+        }
+    }
+
+    [HttpGet("ExplainWordStructured")]
     public async Task<ApiResult> ExplainWordStructured([FromQuery] string text, [FromQuery] string targetLanguage)
     {
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text)) return Fail("Text parameter is required.");
+        if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
+        
+        // Note: GetStructuredExplanationAsync was marked as NotImplementedException in TranslationAndExplanationService
+        // This will likely throw an exception until that service method is fully implemented.
+        try
         {
-            return Fail("Text parameter is required.");
+            var structuredResult = await _translationAndExplanationService.GetStructuredExplanationAsync(text, targetLanguage);
+            return new SuccessfulResult<WordExplanationResult>(structuredResult);
         }
-        if (string.IsNullOrEmpty(targetLanguage))
+        catch (NotImplementedException ex)
         {
-            return Fail("Target language parameter is required.");
+            _logger.LogError(ex, "ExplainWordStructured endpoint hit a NotImplementedException from the service.");
+            return Fail("This feature (structured explanation) is not fully implemented yet.");
         }
-
-        // Call the new service method for structured data
-        var structuredResult = await _translationAndExplanationService.GetStructuredExplanationAsync(text, targetLanguage);
-        return new SuccessfulResult<WordExplanationResult>(structuredResult);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in ExplainWordStructured for text '{Text}' and target language '{TargetLanguage}'", text, targetLanguage);
+            return Fail($"An error occurred: {ex.Message}");
+        }
     }
 
     /// <summary>
-    /// One-off endpoint to populate the Words table with Markdown explanations
+    /// One-off endpoint to populate the WordExplanations table with Markdown explanations
     /// for words found in the WordCollection table.
     /// </summary>
-    /// <returns>An ApiResult containing the total processed and successfully added counts.</returns>
-    [HttpPost]
-    [ProducesResponseType(typeof(SuccessfulResult<object>), 200)] // Define response type
-    [ProducesResponseType(typeof(FailedResult), 500)] // Define error response type
-    public async Task<ApiResult> FillWordsTable()
+    /// <returns>An ApiResult containing the total processed, skipped, and successfully added counts.</returns>
+    [HttpPost("FillWordExplanationsTable")] // Renamed endpoint for clarity
+    [ProducesResponseType(typeof(SuccessfulResult<object>), 200)]
+    [ProducesResponseType(typeof(FailedResult), 500)]
+    public async Task<ApiResult> FillWordExplanationsTable()
     {
-        const string TARGET_LANGUAGE = "简体中文";
-        const string WORD_LANGUAGE = "English";
-        const int BATCH_SIZE = 100; // Process 100 words at a time
+        const string TARGET_EXPLANATION_LANGUAGE = "zh-CN"; // Example: Target language for explanations
+        const string SOURCE_WORD_LANGUAGE = "en";      // Example: Process only English words from WordCollection
+        const int BATCH_SIZE = 50;
 
         long totalProcessed = 0;
         long successfullyAdded = 0;
+        long skippedExisting = 0;
+        long skippedWrongLanguage = 0;
 
         try
         {
-            // 1. Get Max WordId from Words table
-            // Use Queryable<T>().MaxAsync(field) for potentially empty tables
-            // If WordId is int, cast might be needed depending on MaxAsync overload resolution
-            var maxWordIdObj = await _dbClient.Queryable<Word>().MaxAsync(w => w.WordId);
-            long maxWordId = maxWordIdObj == null ? 0 : Convert.ToInt64(maxWordIdObj); // Handle null for empty table
+            _logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, SourceWordLanguage: {SourceLang}",
+                TARGET_EXPLANATION_LANGUAGE, SOURCE_WORD_LANGUAGE);
 
-            _logger.LogInformation("Starting FillWordsTable process. Max existing WordId in Words table: {MaxWordId}", maxWordId);
-
-            // 2. Get the list of agent configurations
             var agentConfigs = _llmConfigService.GetAgentConfigs();
-            if (agentConfigs == null || agentConfigs.Count == 0)
+            if (agentConfigs == null || !agentConfigs.Any())
             {
-                _logger.LogError("No LLM providers are configured for FillWordsTable.");
+                _logger.LogError("No LLM providers are configured for FillWordExplanationsTable.");
                 return Fail("No LLM providers are configured.");
             }
-            _logger.LogInformation("Found {AgentCount} LLM providers for FillWordsTable.", agentConfigs.Count);
+            _logger.LogInformation("Found {AgentCount} LLM providers.", agentConfigs.Count);
 
-            // 3. Maintain a set of unavailable providers for this run
             var unavailableProviders = new HashSet<string>();
-
-            // 4. Query WordCollection in batches
-            long currentLastId = maxWordId;
-            List<WordCollection> wordBatch;
+            long currentLastId = 0; // Start from the beginning of WordCollection
+            List<WordCollection> wordCollectionBatch;
 
             do
             {
-                wordBatch = await _wordCollectionRepository.GetWordsAfterIdAsync(currentLastId, BATCH_SIZE);
-                _logger.LogDebug("Fetched {Count} words from WordCollection starting after ID {LastId}", wordBatch.Count, currentLastId);
+                // Fetch words from WordCollection where Language matches SOURCE_WORD_LANGUAGE
+                wordCollectionBatch = await _dbClient.Queryable<WordCollection>()
+                                           .Where(wc => wc.Id > currentLastId && wc.Language == SOURCE_WORD_LANGUAGE && wc.DeletedAt == null)
+                                           .OrderBy(wc => wc.Id)
+                                           .Take(BATCH_SIZE)
+                                           .ToListAsync();
 
-                if (!wordBatch.Any())
+                _logger.LogDebug("Fetched {Count} words from WordCollection (Language: {SourceLang}) starting after ID {LastId}",
+                                 wordCollectionBatch.Count, SOURCE_WORD_LANGUAGE, currentLastId);
+
+                if (!wordCollectionBatch.Any())
                 {
-                    _logger.LogInformation("No more words found in WordCollection after ID {LastId}. Ending process.", currentLastId);
-                    break; // Exit loop if no more words
+                    _logger.LogInformation("No more words found in WordCollection for language {SourceLang} after ID {LastId}. Ending process.",
+                                           SOURCE_WORD_LANGUAGE, currentLastId);
+                    break;
                 }
 
-                foreach (var wordCollectionRecord in wordBatch)
+                foreach (var wcRecord in wordCollectionBatch)
                 {
                     totalProcessed++;
-                    currentLastId = wordCollectionRecord.Id; // Update last ID for the next batch query
+                    currentLastId = wcRecord.Id;
 
-                    // Skip if WordText is empty or null
-                    if (string.IsNullOrWhiteSpace(wordCollectionRecord.WordText))
+                    if (string.IsNullOrWhiteSpace(wcRecord.WordText))
                     {
-                        _logger.LogWarning("Skipping WordCollection record with ID {Id} due to empty WordText.", wordCollectionRecord.Id);
+                        _logger.LogWarning("Skipping WordCollection record with ID {Id} due to empty WordText.", wcRecord.Id);
+                        continue;
+                    }
+
+                    // Check if an explanation already exists for this WordCollectionId and TargetExplanationLanguage
+                    bool explanationExists = await _dbClient.Queryable<WordExplanation>()
+                        .AnyAsync(we => we.WordCollectionId == wcRecord.Id && we.ExplanationLanguage == TARGET_EXPLANATION_LANGUAGE);
+
+                    if (explanationExists)
+                    {
+                        skippedExisting++;
+                        _logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Explanation already exists for language {TargetLang}.",
+                                         wcRecord.Id, wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE);
+                        continue;
+                    }
+
+                    // This check is now part of the initial query, but kept for safety / clarity if query changes
+                    if (wcRecord.Language != SOURCE_WORD_LANGUAGE)
+                    {
+                        skippedWrongLanguage++;
+                         _logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Language '{ActualLang}' does not match target '{TargetSourceLang}'.",
+                                         wcRecord.Id, wcRecord.WordText, wcRecord.Language, SOURCE_WORD_LANGUAGE);
                         continue;
                     }
 
                     try
                     {
-                        // Check if all providers are unavailable before processing this word
                         if (unavailableProviders.Count == agentConfigs.Count)
                         {
-                            _logger.LogCritical("All LLM providers are currently unavailable. Aborting FillWordsTable process.");
-                            return Fail("All LLM providers are currently unavailable. Please check configurations or try again later.");
+                            _logger.LogCritical("All LLM providers are currently unavailable. Aborting FillWordExplanationsTable process.");
+                            return Fail("All LLM providers are currently unavailable.");
                         }
 
-                        // 3a. Iterate through available providers for this word
                         ExplanationResult? successfulResult = null;
                         LlmConfigurationService.AgentConfig? usedAgent = null;
 
                         foreach (var agent in agentConfigs)
                         {
-                            if (unavailableProviders.Contains(agent.ApiProvider))
-                            {
-                                _logger.LogDebug("Skipping unavailable provider {Provider} for word '{WordText}'", agent.ApiProvider, wordCollectionRecord.WordText);
-                                continue;
-                            }
+                            if (unavailableProviders.Contains(agent.ApiProvider)) continue;
 
-                            _logger.LogDebug("Trying provider {Provider} for word '{WordText}'", agent.ApiProvider, wordCollectionRecord.WordText);
-                            var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(wordCollectionRecord.WordText, TARGET_LANGUAGE, agent);
+                            _logger.LogDebug("Trying provider {Provider} for word '{WordText}' (WC ID: {WCId})",
+                                             agent.ApiProvider, wcRecord.WordText, wcRecord.Id);
+                            var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE, agent);
 
-                            if (explanationResult.IsSuccess && explanationResult.Markdown != null)
+                            if (explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
                             {
                                 successfulResult = explanationResult;
                                 usedAgent = agent;
-                                _logger.LogInformation("Successfully got explanation from provider {Provider} for word '{WordText}' using model {ModelName}", agent.ApiProvider, wordCollectionRecord.WordText, explanationResult.ModelName);
-                                break; // Success, no need to try other providers
+                                _logger.LogInformation("Successfully got explanation from provider {Provider} for word '{WordText}' (WC ID: {WCId}) using model {ModelName}",
+                                                       agent.ApiProvider, wcRecord.WordText, wcRecord.Id, explanationResult.ModelName);
+                                break;
                             }
-
-                            unavailableProviders.Add(agent.ApiProvider);
-                            // Log the failure for this provider
+                            
                             string errorMsg = explanationResult.ErrorMessage ?? "Unknown error";
                             if (explanationResult.HttpStatusCode.HasValue)
                             {
                                 int statusCode = explanationResult.HttpStatusCode.Value;
                                 errorMsg += $" (HTTP Status: {statusCode})";
-                                // Check if it's a 40x error to mark provider unavailable for this run
                                 if (statusCode >= 400 && statusCode < 500)
                                 {
-                                    _logger.LogWarning("Marking provider {Provider} as unavailable for this run due to HTTP {StatusCode} error for word '{WordText}': {ErrorMessage}", agent.ApiProvider, statusCode, wordCollectionRecord.WordText, errorMsg);
+                                    _logger.LogWarning("Marking provider {Provider} as unavailable due to HTTP {StatusCode} for word '{WordText}' (WC ID: {WCId}): {Error}",
+                                                       agent.ApiProvider, statusCode, wcRecord.WordText, wcRecord.Id, errorMsg);
                                     unavailableProviders.Add(agent.ApiProvider);
                                 }
                             }
-                            _logger.LogWarning("Provider {Provider} failed for word '{WordText}': {ErrorMessage}", agent.ApiProvider, wordCollectionRecord.WordText, errorMsg);
-                            // Continue to next provider
+                            _logger.LogWarning("Provider {Provider} failed for word '{WordText}' (WC ID: {WCId}): {Error}",
+                                               agent.ApiProvider, wcRecord.WordText, wcRecord.Id, errorMsg);
                         }
 
-                        if (successfulResult != null && usedAgent != null)
+                        if (successfulResult != null && usedAgent != null && !string.IsNullOrWhiteSpace(successfulResult.Markdown))
                         {
-                            // 3b. Create Word Entity
-                            var newWord = new Word
+                            var newExplanation = new WordExplanation
                             {
-                                WordId = (int)wordCollectionRecord.Id, // Cast WordCollection.Id (long) to Word.WordId (int)
-                                WordText = wordCollectionRecord.WordText,
-                                WordLanguage = WORD_LANGUAGE,
-                                ExplanationLanguage = TARGET_LANGUAGE,
+                                WordCollectionId = wcRecord.Id,
+                                WordText = wcRecord.WordText, // Denormalized
+                                WordLanguage = wcRecord.Language, // Denormalized (should be SOURCE_WORD_LANGUAGE)
+                                ExplanationLanguage = TARGET_EXPLANATION_LANGUAGE,
                                 MarkdownExplanation = successfulResult.Markdown,
-                                Pronunciation = null, // Not requested
-                                Definitions = null,   // Not requested
-                                Examples = null,      // Not requested
-                                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), // Use DateTimeOffset extension
+                                CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
                                 ProviderModelName = $"{usedAgent.ApiProvider}:{successfulResult.ModelName}"
                             };
 
-                            // 3c. Insert into Words Table
                             try
                             {
-                                // Use InsertAsync from RepositoryBase
-                                var insertResult = await _wordRepository.InsertAsync(newWord);
-                                if (insertResult) // InsertAsync returns bool indicating success
+                                // Using direct DB client insert for WordExplanation
+                                var insertResult = await _dbClient.Insertable(newExplanation).ExecuteCommandAsync();
+                                if (insertResult > 0)
                                 {
                                     successfullyAdded++;
-                                    _logger.LogDebug("Successfully added WordId: {WordId}, Text: {WordText}", newWord.WordId, newWord.WordText);
+                                    _logger.LogDebug("Successfully added WordExplanation for WC ID: {WCId}, Text: {WordText}",
+                                                     wcRecord.Id, wcRecord.WordText);
                                 }
                                 else
                                 {
-                                    // This case might indicate an issue if InsertAsync is expected to throw on failure
-                                    _logger.LogWarning("Failed to insert WordId: {WordId}, Text: {WordText} (InsertAsync returned false)", newWord.WordId, newWord.WordText);
+                                    _logger.LogWarning("Failed to insert WordExplanation for WC ID: {WCId}, Text: {WordText} (ExecuteCommandAsync returned 0)",
+                                                     wcRecord.Id, wcRecord.WordText);
                                 }
                             }
                             catch (Exception dbEx)
                             {
-                                // Catch potential exceptions like unique key violations if the word already exists
-                                _logger.LogError(dbEx, "Database error inserting WordId: {WordId}, Text: {WordText}. Possible duplicate?", wordCollectionRecord.Id, wordCollectionRecord.WordText);
-                                // Continue to next word
+                                _logger.LogError(dbEx, "Database error inserting WordExplanation for WC ID: {WCId}, Text: {WordText}. Possible duplicate or other constraint violation?",
+                                                 wcRecord.Id, wcRecord.WordText);
                             }
                         }
                         else
                         {
-                            // No provider succeeded for this word
-                            _logger.LogWarning("All available providers failed to provide explanation for WordCollection ID: {WordCollectionId}, Text: {WordText}.", wordCollectionRecord.Id, wordCollectionRecord.WordText);
-                            // Continue to next word
+                            _logger.LogWarning("All available providers failed for WordCollection ID: {WCId}, Text: {WordText}.",
+                                             wcRecord.Id, wcRecord.WordText);
                         }
                     }
-                    catch (Exception serviceEx) // Catch unexpected errors from the loop/service call itself
+                    catch (Exception serviceEx)
                     {
-                        _logger.LogError(serviceEx, "Error processing WordCollection ID: {WordCollectionId}, Text: {WordText}", wordCollectionRecord.Id, wordCollectionRecord.WordText);
-                        // Continue to next word
+                        _logger.LogError(serviceEx, "Error processing WordCollection ID: {WCId}, Text: {WordText}",
+                                         wcRecord.Id, wcRecord.WordText);
                     }
-
-                    // Optional: Add a small delay to avoid overwhelming the LLM API
-                    // await Task.Delay(100);
+                    // await Task.Delay(100); // Optional delay
                 }
+            } while (wordCollectionBatch.Any());
 
-            } while (wordBatch.Any()); // Continue as long as any words are returned in a batch
-
-            _logger.LogInformation("FillWordsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}", totalProcessed, successfullyAdded);
-            // 4. Return Result using ApiResult structure
-            return new SuccessfulResult<object>(new { TotalProcessed = totalProcessed, SuccessfullyAdded = successfullyAdded });
+            _logger.LogInformation("FillWordExplanationsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}, Skipped (Existing): {SkippedExisting}, Skipped (Wrong Lang): {SkippedWrongLang}",
+                                 totalProcessed, successfullyAdded, skippedExisting, skippedWrongLanguage);
+            return new SuccessfulResult<object>(new
+            {
+                TotalProcessed = totalProcessed,
+                SuccessfullyAdded = successfullyAdded,
+                SkippedExistingExplanation = skippedExisting,
+                SkippedWrongSourceLanguage = skippedWrongLanguage
+            });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception during FillWordsTable process.");
-            return Fail($"An error occurred during the FillWordsTable process: {ex.Message}");
+            _logger.LogError(ex, "Unhandled exception during FillWordExplanationsTable process.");
+            return Fail($"An error occurred: {ex.Message}");
         }
     }
 }

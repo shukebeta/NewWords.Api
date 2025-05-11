@@ -14,7 +14,7 @@ namespace NewWords.Api.Entities
         /// Unique identifier for this specific word explanation (Primary Key, Auto-Increment).
         /// </summary>
         [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
-        public long WordExplanationId { get; set; }
+        public long Id { get; set; }
 
         /// <summary>
         /// Foreign key referencing the Id in the WordCollection table. Required.

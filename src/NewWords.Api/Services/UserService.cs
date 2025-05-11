@@ -24,7 +24,7 @@ namespace NewWords.Api.Services
             // Map Entity to DTO
             return new UserProfileDto
             {
-                UserId = user.UserId,
+                UserId = user.Id,
                 Email = user.Email,
                 NativeLanguage = user.NativeLanguage,
                 CurrentLearningLanguage = user.CurrentLearningLanguage,
@@ -61,7 +61,7 @@ namespace NewWords.Api.Services
                 TotalCount = userPageData.TotalCount,
                 DataList = userPageData.DataList?.Select(user => new UserProfileDto
                 {
-                    UserId = user.UserId,
+                    UserId = user.Id,
                     Email = user.Email,
                     NativeLanguage = user.NativeLanguage,
                     CurrentLearningLanguage = user.CurrentLearningLanguage,

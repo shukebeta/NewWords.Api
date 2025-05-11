@@ -85,7 +85,7 @@ namespace NewWords.Api.Services
                 throw new Exception("Sorry, your account has been deleted");
             }
 
-            var claims = TokenHelper.ClaimsGenerator(user.UserId, user.UserId.ToString(), user.Email);
+            var claims = TokenHelper.ClaimsGenerator(user.Id, user.Id.ToString(), user.Email);
             var token = TokenHelper.JwtTokenGenerator(claims, jwtConfig.Issuer, jwtConfig.SymmetricSecurityKey, jwtConfig.TokenExpiresInDays);
             return new UserSession()
             {

@@ -1,13 +1,14 @@
 #!/bin/bash
 
 set -ex
+script_dir="$(dirname "$(readlink -f "$0")")"
 
 databases=(NewWords)
 
 for db in "${databases[@]}";
 do
-	list=`mysql -e "use ${db}; show tables;"|sed '1d'`
+	list=`mysql --defaults-group-suffix=aiven -e "use ${db}; show tables;"|sed '1d'`
 	while IFS= read -r line; do
-		export-db-dict $db $line
+		$script_dir/export-db-dict $db $line
 	done <<< "$list"
 done;

@@ -9,26 +9,26 @@ namespace NewWords.Api.Entities
     /// </summary>
     [SugarTable("UserWords")]
     // Define the unique constraint for the combination of UserId and WordId
-    [SugarIndex("UQ_UserWords_UserId_WordId", nameof(UserId), OrderByType.Desc, nameof(WordId), OrderByType.Asc, true)]
+    [SugarIndex("UQ_UserWords_UserId_WordId", nameof(UserId), OrderByType.Desc, nameof(WordExplanationId), OrderByType.Asc, true)]
     public class UserWord
     {
         /// <summary>
         /// Unique identifier for this user-word link (Primary Key, Auto-Increment).
         /// </summary>
         [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
-        public int UserWordId { get; set; }
+        public long Id { get; set; }
 
         /// <summary>
         /// Foreign key referencing the User. Required.
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public long UserId { get; set; }
+        public int UserId { get; set; }
 
         /// <summary>
         /// Foreign key referencing the specific Word explanation. Required.
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public int WordId { get; set; }
+        public long WordExplanationId { get; set; }
 
         /// <summary>
         /// The user's current learning status for this word. Required. Defaults to New.

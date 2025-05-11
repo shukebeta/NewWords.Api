@@ -9,4 +9,4 @@ script_dir="$(dirname "$(readlink -f "$0")")"
 backupFile="$script_dir/../documents/database/all-db-definition.sql"
 
 # Dump the database with the absolute path for the backup file
-mysqldump --defaults-group-suffix=aiven -d --databases NewWords | sed -e 's/ AUTO_INCREMENT=[0-9]*//g' -e '$d' > "$backupFile"
+mysqldump --defaults-group-suffix=aiven -d --set-gtid-purged=OFF --databases NewWords | sed -e 's/ AUTO_INCREMENT=[0-9]*//g' -e '$d' > "$backupFile"

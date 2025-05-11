@@ -26,7 +26,7 @@ namespace NewWords.Api.Repositories
             };
             RefAsync<int> totalCount = 0;
             var result = await db.Queryable<User>()
-                .OrderBy(u => u.UserId, isAsc ? OrderByType.Asc : OrderByType.Desc)
+                .OrderBy(u => u.Id, isAsc ? OrderByType.Asc : OrderByType.Desc)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
             pageData.TotalCount = totalCount;
             pageData.DataList = result;

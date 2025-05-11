@@ -13,7 +13,7 @@ public class UserSession
 
     public UserSession From(User user)
     {
-        UserId = user.UserId;
+        UserId = user.Id;
         Email = user.Email;
         NativeLanguage = user.NativeLanguage;
         CurrentLearningLanguage = user.CurrentLearningLanguage;
