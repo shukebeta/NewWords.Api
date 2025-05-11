@@ -7,7 +7,6 @@ namespace LLM.Configuration
     /// </summary>
     public class LlmConfigurationService
     {
-        private readonly IConfiguration _configuration;
         private readonly List<AgentConfig> _agentConfigs;
 
         /// <summary>
@@ -16,8 +15,8 @@ namespace LLM.Configuration
         /// <param name="configuration">The configuration instance to read settings from.</param>
         public LlmConfigurationService(IConfiguration configuration)
         {
-            _configuration = configuration;
-            _agentConfigs = _configuration.GetSection("Agents").Get<List<AgentConfig>>() ?? new List<AgentConfig>();
+            var configuration1 = configuration;
+            _agentConfigs = configuration1.GetSection("Agents").Get<List<AgentConfig>>() ?? new List<AgentConfig>();
         }
 
         /// <summary>
@@ -28,41 +27,6 @@ namespace LLM.Configuration
         {
             return _agentConfigs;
         }
-
-        // Obsolete properties and methods related to a single provider configuration
-        // /// <summary>
-        // /// Gets the API provider name.
-        // /// </summary>
-        // public string ApiProvider => _apiProvider;
-        //
-        // /// <summary>
-        // /// Gets the API key for the provider.
-        // /// </summary>
-        // public string ApiKey => _apiKey;
-        //
-        // /// <summary>
-        // /// Gets the primary model to use for API calls.
-        // /// </summary>
-        // /// <returns>The primary model name if available; otherwise, an empty string.</returns>
-        // public string GetPrimaryModel()
-        // {
-        //     return _models.FirstOrDefault() ?? string.Empty;
-        // }
-        //
-        // /// <summary>
-        // /// Gets the next available model as a fallback if the primary model fails.
-        // /// </summary>
-        // /// <param name="currentModel">The current model that failed.</param>
-        // /// <returns>The next model in the list if available; otherwise, an empty string.</returns>
-        // public string GetFallbackModel(string currentModel)
-        // {
-        //     var index = _models.IndexOf(currentModel);
-        //     if (index < _models.Count - 1)
-        //     {
-        //         return _models[index + 1];
-        //     }
-        //     return GetPrimaryModel();
-        // }
 
         /// <summary>
         /// Represents the configuration structure for an agent in appsettings.json.

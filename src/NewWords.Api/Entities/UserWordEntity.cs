@@ -13,7 +13,7 @@ namespace NewWords.Api.Entities
         /// Unique identifier for the user-word association (Primary Key, Auto-Increment).
         /// </summary>
         [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
-        public int UserWordId { get; set; }
+        public int Id { get; set; }
 
         /// <summary>
         /// Identifier of the user. Foreign key to Users table.

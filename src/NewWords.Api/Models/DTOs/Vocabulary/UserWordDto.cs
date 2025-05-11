@@ -11,12 +11,12 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
         /// <summary>
         /// Identifier for the user-specific word entry.
         /// </summary>
-        public int UserWordId { get; set; }
+        public int Id { get; set; }
 
         /// <summary>
         /// Identifier for the canonical word explanation.
         /// </summary>
-        public int WordId { get; set; }
+        public long WordExplanationId { get; set; }
 
         /// <summary>
         /// The actual word text.
@@ -59,8 +59,8 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
         public WordStatus Status { get; set; }
 
         /// <summary>
-        /// Timestamp when the user added this word.
+        /// Unix timestamp when the user added this word.
         /// </summary>
-        public DateTime AddedAt { get; set; }
+        public long CreatedAt { get; set; }
     }
 }
