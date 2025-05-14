@@ -45,7 +45,7 @@ jobs:
           echo "Current directory: $(pwd)"
           echo "Home directory: $HOME"
 
-      - name: Deploy to production - prepare directory
+      - name: Deploy to production and replace placeholders - prepare directory
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -54,6 +54,13 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             mkdir -p ${{ secrets.DEPLOY_PATH }}
+            sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" publish/appsettings.json
+            sed -i "s/PRODUCTION_SYMMETRIC_SECURITY_KEY/${{ secrets.PRODUCTION_SYMMETRIC_SECURITY_KEY }}/g" publish/appsettings.json
+            sed -i "s/XAI_API_KEY/${{ secrets.XAI_API_KEY }}/g" publish/appsettings.json
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            VERSION_INFO="$COMMIT_HASH ($BUILD_DATE)"
+            sed -i "s/VERSION_PLACEHOLDER/$VERSION_INFO/" publish/appsettings.json
 
       - name: Copy files to VPS
         uses: appleboy/scp-action@master
@@ -93,22 +100,6 @@ jobs:
             sudo mv /tmp/${{ env.SERVICE_NAME }} /etc/systemd/system/${{ env.SERVICE_NAME }}
             sudo systemctl daemon-reload
             sudo systemctl enable ${{ env.SERVICE_NAME }}
-
-      - name: Replace placeholders with actual information
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key_path: /home/runner/.ssh/id_ed25519
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
-            sed -i "s/PRODUCTION_SYMMETRIC_SECURITY_KEY/${{ secrets.PRODUCTION_SYMMETRIC_SECURITY_KEY }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
-            sed -i "s/XAI_API_KEY/${{ secrets.XAI_API_KEY }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
-            COMMIT_HASH=$(git rev-parse --short HEAD)
-            BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            VERSION_INFO="$COMMIT_HASH ($BUILD_DATE)"
-            sed -i "s/VERSION_PLACEHOLDER/$VERSION_INFO/" ${{ secrets.DEPLOY_PATH }}/appsettings.json
 
       - name: Start Service
         uses: appleboy/ssh-action@master
