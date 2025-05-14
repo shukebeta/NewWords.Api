@@ -24,25 +24,6 @@ CREATE DATABASE /*!32312 IF NOT EXISTS*/ `NewWords` /*!40100 DEFAULT CHARACTER S
 USE `NewWords`;
 
 --
--- Table structure for table `LlmConfigurations`
---
-
-DROP TABLE IF EXISTS `LlmConfigurations`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `LlmConfigurations` (
-  `LlmConfigId` int NOT NULL AUTO_INCREMENT,
-  `ModelName` varchar(100) NOT NULL,
-  `DisplayName` varchar(100) DEFAULT NULL,
-  `IsEnabled` tinyint(1) NOT NULL DEFAULT '1',
-  `ApiKey` varchar(1024) DEFAULT NULL,
-  `CreatedAt` bigint NOT NULL,
-  PRIMARY KEY (`LlmConfigId`),
-  UNIQUE KEY `ModelName` (`ModelName`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `QueryHistory`
 --
 
