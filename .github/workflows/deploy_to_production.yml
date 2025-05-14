@@ -99,7 +99,7 @@ jobs:
               "[Install]" \
               "WantedBy=multi-user.target" > /tmp/${{ env.SERVICE_NAME }}
             sudo mv /tmp/${{ env.SERVICE_NAME }} /etc/systemd/system/${{ env.SERVICE_NAME }}
-            sudo chown root:root {{ env.SERVICE_NAME }}
+            sudo chown root:root /etc/systemd/system/${{ env.SERVICE_NAME }}
             sudo systemctl daemon-reload
             sudo systemctl enable ${{ env.SERVICE_NAME }}
             sudo systemctl restart ${{ env.SERVICE_NAME }}
