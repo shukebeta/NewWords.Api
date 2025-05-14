@@ -35,6 +35,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          debug: true
           script: |
             mkdir -p ${{ secrets.DEPLOY_PATH }}
 
@@ -56,6 +57,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          debug: true
           script: |
             printf "%s\n" "[Unit]" \
               "Description=NewWords Api" \
@@ -84,11 +86,12 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          debug: true
           script: |
             sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
             sed -i "s/PRODUCTION_SYMMETRIC_SECURITY_KEY/${{ secrets.PRODUCTION_SYMMETRIC_SECURITY_KEY }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
             sed -i "s/XAI_API_KEY/${{ secrets.XAI_API_KEY }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
-            COMMIT_HASH=$(git rev-parse --short HEAD)
+            COMMIT_HASH=$(git rev-parse --short HEAD || echo "unknown")
             BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             VERSION_INFO="$COMMIT_HASH ($BUILD_DATE)"
             sed -i "s/VERSION_PLACEHOLDER/$VERSION_INFO/" ${{ secrets.DEPLOY_PATH }}/appsettings.json
@@ -100,5 +103,6 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          debug: true
           script: |
             sudo systemctl restart ${{ env.SERVICE_NAME }}
