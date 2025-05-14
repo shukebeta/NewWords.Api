@@ -51,7 +51,6 @@ namespace NewWords.Api.Services
                 await db.AsTenant().BeginTranAsync();
                 // 1. Handle WordCollection
                 var wordCollectionId = await _HandleWordCollection(wordText, wordLanguage);
-
                 // 2. Handle WordExplanation (Explanation Cache)
                 var explanation = await _HandleExplanation(wordText, wordLanguage, explanationLanguage, wordCollectionId);
 

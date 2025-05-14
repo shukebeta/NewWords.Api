@@ -1,0 +1,104 @@
+name: Deploy NewWords.Api to production
+
+on:
+  push:
+    branches: [ master ]
+
+env:
+  SERVICE_NAME: new-words-api.service
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish --configuration Release --output ./publish
+
+      - name: Deploy to production - prepare directory
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            mkdir -p ${{ secrets.DEPLOY_PATH }}
+
+      - name: Copy files to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "publish/*"
+          target: ${{ secrets.DEPLOY_PATH }}
+          strip_components: 1
+
+      - name: Create/Update systemd service file
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            printf "%s\n" "[Unit]" \
+              "Description=NewWords Api" \
+              "After=network.target" \
+              "" \
+              "[Service]" \
+              "Type=simple" \
+              "User=${{ secrets.SSH_USERNAME }}" \
+              "WorkingDirectory=${{ secrets.DEPLOY_PATH }}" \
+              "ExecStart=/usr/bin/dotnet ${{ secrets.DEPLOY_PATH }}/NewWords.Api.dll" \
+              "Restart=always" \
+              "RestartSec=10" \
+              "SyslogIdentifier=dotnet-app" \
+              "Environment=ASPNETCORE_ENVIRONMENT=Production" \
+              "" \
+              "[Install]" \
+              "WantedBy=multi-user.target" > /tmp/${{ env.SERVICE_NAME }}
+            sudo mv /tmp/${{ env.SERVICE_NAME }} /etc/systemd/system/${{ env.SERVICE_NAME }}
+            sudo systemctl daemon-reload
+            sudo systemctl enable ${{ env.SERVICE_NAME }}
+
+      - name: Replace placeholders with actual information
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
+            sed -i "s/PRODUCTION_SYMMETRIC_SECURITY_KEY/${{ secrets.PRODUCTION_SYMMETRIC_SECURITY_KEY }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
+            sed -i "s/XAI_API_KEY/${{ secrets.XAI_API_KEY }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            VERSION_INFO="$COMMIT_HASH ($BUILD_DATE)"
+            sed -i "s/VERSION_PLACEHOLDER/$VERSION_INFO/" ${{ secrets.DEPLOY_PATH }}/appsettings.json
+
+      - name: Start Service
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            sudo systemctl restart ${{ env.SERVICE_NAME }}
