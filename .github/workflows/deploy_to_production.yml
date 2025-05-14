@@ -50,7 +50,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: $HOME/.ssh/id_ed25519
+          key_path: /home/runner/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             mkdir -p ${{ secrets.DEPLOY_PATH }}
@@ -60,7 +60,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: $HOME/.ssh/id_ed25519
+          key_path: /home/runner/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           source: "publish/*"
           target: ${{ secrets.DEPLOY_PATH }}
@@ -71,7 +71,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: $HOME/.ssh/id_ed25519
+          key_path: /home/runner/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             printf "%s\n" "[Unit]" \
@@ -99,7 +99,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: $HOME/.ssh/id_ed25519
+          key_path: /home/runner/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
@@ -115,7 +115,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: $HOME/.ssh/id_ed25519
+          key_path: /home/runner/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             sudo systemctl restart ${{ env.SERVICE_NAME }}
