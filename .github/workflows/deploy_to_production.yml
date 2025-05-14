@@ -25,7 +25,7 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      - name: Publish and preapre config file
+      - name: Publish
         run: |
           dotnet publish --configuration Release --output ./publish
           sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" ./publish/appsettings.json
@@ -74,7 +74,7 @@ jobs:
           target: ${{ secrets.DEPLOY_PATH }}
           strip_components: 1
 
-      - name: Create/Update systemd service file
+      - name: Create/Update systemd service file and start the service
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -90,7 +90,7 @@ jobs:
               "Type=simple" \
               "User=${{ secrets.SSH_USERNAME }}" \
               "WorkingDirectory=${{ secrets.DEPLOY_PATH }}" \
-              "ExecStart=/usr/bin/dotnet ${{ secrets.DEPLOY_PATH }}/NewWords.Api.dll" \
+              "ExecStart=/home/ubuntu/dotnet/dotnet ${{ secrets.DEPLOY_PATH }}/NewWords.Api.dll" \
               "Restart=always" \
               "RestartSec=10" \
               "SyslogIdentifier=dotnet-app" \
@@ -99,15 +99,7 @@ jobs:
               "[Install]" \
               "WantedBy=multi-user.target" > /tmp/${{ env.SERVICE_NAME }}
             sudo mv /tmp/${{ env.SERVICE_NAME }} /etc/systemd/system/${{ env.SERVICE_NAME }}
+            sudo chown root:root {{ env.SERVICE_NAME }}
             sudo systemctl daemon-reload
             sudo systemctl enable ${{ env.SERVICE_NAME }}
-
-      - name: Start Service
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key_path: /home/runner/.ssh/id_ed25519
-          port: ${{ secrets.SSH_PORT }}
-          script: |
             sudo systemctl restart ${{ env.SERVICE_NAME }}
