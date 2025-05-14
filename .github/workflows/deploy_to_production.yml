@@ -35,6 +35,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           # Optional: Add known hosts to avoid fingerprint prompts
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          # Add debugging information
+          echo "=== SSH Directory Contents ==="
+          ls -la ~/.ssh/
+          echo "=== Key File Size ==="
+          stat -c %s ~/.ssh/id_ed25519
+          echo "=== First line of key file (safe to show) ==="
+          head -n 1 ~/.ssh/id_ed25519
       - name: Deploy to production - prepare directory
         uses: appleboy/ssh-action@master
         with:
