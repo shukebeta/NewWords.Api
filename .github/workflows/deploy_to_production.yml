@@ -30,24 +30,27 @@ jobs:
 
       - name: Create SSH key file
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          mkdir -p $HOME/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > $HOME/.ssh/id_ed25519
+          chmod 600 $HOME/.ssh/id_ed25519
           # Optional: Add known hosts to avoid fingerprint prompts
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> $HOME/.ssh/known_hosts
           # Add debugging information
           echo "=== SSH Directory Contents ==="
-          ls -la ~/.ssh/
+          ls -la $HOME/.ssh/
           echo "=== Key File Size ==="
-          stat -c %s ~/.ssh/id_ed25519
+          stat -c %s $HOME/.ssh/id_ed25519
           echo "=== First line of key file (safe to show) ==="
-          head -n 1 ~/.ssh/id_ed25519
+          head -n 1 $HOME/.ssh/id_ed25519
+          echo "Current directory: $(pwd)"
+          echo "Home directory: $HOME"
+
       - name: Deploy to production - prepare directory
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: ~/.ssh/id_ed25519
+          key_path: $HOME/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             mkdir -p ${{ secrets.DEPLOY_PATH }}
@@ -57,7 +60,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: ~/.ssh/id_ed25519
+          key_path: $HOME/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           source: "publish/*"
           target: ${{ secrets.DEPLOY_PATH }}
@@ -68,7 +71,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: ~/.ssh/id_ed25519
+          key_path: $HOME/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             printf "%s\n" "[Unit]" \
@@ -96,7 +99,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: ~/.ssh/id_ed25519
+          key_path: $HOME/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             sed -i "s/PRODUCTION_MYSQL_PASSWORD/${{ secrets.PRODUCTION_MYSQL_PASSWORD }}/g" ${{ secrets.DEPLOY_PATH }}/appsettings.json
@@ -112,7 +115,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          key_path: ~/.ssh/id_ed25519
+          key_path: $HOME/.ssh/id_ed25519
           port: ${{ secrets.SSH_PORT }}
           script: |
             sudo systemctl restart ${{ env.SERVICE_NAME }}
