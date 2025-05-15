@@ -3,6 +3,7 @@ name: Deploy NewWords.Api to production
 on:
   push:
     branches: [ master ]
+  workflow_dispatch:
 
 env:
   SERVICE_NAME: new-words-api.service
