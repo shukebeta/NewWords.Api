@@ -33,7 +33,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
         else
         {
             // Include inner exception messages for debugging in production
-            var fullMessage = new StringBuilder(exception.Message);
+            var fullMessage = new StringBuilder(exception.ToString());
 
             var innerException = exception.InnerException;
             if (innerException != null)
@@ -41,7 +41,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
                 fullMessage.Append(" Inner exception: ");
                 while (innerException != null)
                 {
-                    fullMessage.Append($"[{innerException.GetType().Name}: {innerException.Message}]");
+                    fullMessage.Append($"[{innerException.GetType().Name}: {innerException.ToString()}]");
                     innerException = innerException.InnerException;
                     if (innerException != null)
                     {
