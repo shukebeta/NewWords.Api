@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using NewWords.Api.Entities;
 using NewWords.Api.Services;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
@@ -39,13 +40,14 @@ builder.Services.AddProblemDetails();
 builder.Services.AddCors(SetupCors(builder));
 ConfigAuthentication(builder);
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<NewWords.Api.Services.interfaces.ICurrentUser, NewWords.Api.Services.CurrentUser>();
+builder.Services.AddScoped<NewWords.Api.Services.interfaces.ICurrentUser, CurrentUser>();
 builder.Services.AddAutoMapper(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile));
 
 // Register Application Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IVocabularyService, VocabularyService>();
+builder.Services.AddScoped<IQueryHistoryService, QueryHistoryService>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IUserRepository, NewWords.Api.Repositories.UserRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IWordRepository, NewWords.Api.Repositories.WordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IUserWordRepository, NewWords.Api.Repositories.UserWordRepository>();
