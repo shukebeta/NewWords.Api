@@ -51,12 +51,14 @@ namespace NewWords.Api.Services
                 await db.AsTenant().BeginTranAsync();
                 // 1. Handle WordCollection
                 var wordCollectionId = await _HandleWordCollection(wordText, wordLanguage);
+
                 // 2. Handle WordExplanation (Explanation Cache)
                 var explanation = await _HandleExplanation(wordText, wordLanguage, explanationLanguage, wordCollectionId);
 
                 // 3. Handle UserWord
                 await _HandleUserWord(userId, explanation);
 
+                await db.AsTenant().CommitTranAsync();
                 return explanation!;
             }
             catch (Exception ex) // Catch exceptions from UseTranAsync or input validation
@@ -83,7 +85,6 @@ namespace NewWords.Api.Services
                 };
                 await userWordRepository.InsertAsync(newUserWord);
             }
-            await db.AsTenant().CommitTranAsync();
         }
 
         private async Task<WordExplanation> _HandleExplanation(string wordText, string wordLanguage, string explanationLanguage,

@@ -10,7 +10,7 @@ using NewWords.Api.Services.interfaces;
 namespace NewWords.Api.Controllers
 {
     [Authorize]
-    public class VocabularyController(IVocabularyService vocabularyService, ICurrentUser currentUser)
+    public class VocabularyController(IVocabularyService vocabularyService, IQueryHistoryService queryHistoryService, ICurrentUser currentUser)
         : BaseController
     {
         /// <summary>
@@ -55,6 +55,7 @@ namespace NewWords.Api.Controllers
                 addWordRequest.ExplanationLanguage
             );
 
+            queryHistoryService.LogQueryAsync(addedWordExplanation.WordCollectionId, currentUser.Id);
             return new SuccessfulResult<WordExplanation>(addedWordExplanation);
         }
     }

@@ -3,15 +3,12 @@ using LLM.Services;
 using Api.Framework.Result;
 using LLM.Models;
 using Microsoft.AspNetCore.Authorization;
-using NewWords.Api.Repositories;
 using SqlSugar;
 using NewWords.Api.Entities;
 using LLM.Configuration;
-using System.Collections.Generic; // Added for HashSet
-using System.Linq; // Added for Linq
-using System.Threading.Tasks; // Added for Task
-using Api.Framework.Extensions; // Added for ToUnixTimeSeconds
-using System; // Added for Exception
+using Api.Framework.Extensions;
+using NewWords.Api.Services;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers;
 
@@ -19,60 +16,41 @@ namespace NewWords.Api.Controllers;
 /// Controller for testing LLM services including language recognition and word explanations.
 /// </summary>
 [Authorize]
-public class LlmController : BaseController
+public class LlmController(
+    ICurrentUser currentUser,
+    LanguageRecognitionService languageRecognitionService,
+    TranslationAndExplanationService translationAndExplanationService,
+    LlmConfigurationService llmConfigService,
+    ISqlSugarClient dbClient,
+    ILogger<LlmController> logger)
+    : BaseController
 {
-    private readonly LanguageRecognitionService _languageRecognitionService;
-    private readonly TranslationAndExplanationService _translationAndExplanationService;
-    private readonly LlmConfigurationService _llmConfigService;
-    private readonly ISqlSugarClient _dbClient;
-    private readonly IWordRepository _wordExplanationRepository; // Renamed to reflect it handles WordExplanation
-    private readonly IWordCollectionRepository _wordCollectionRepository;
-    private readonly ILogger<LlmController> _logger;
-
-    public LlmController(
-        LanguageRecognitionService languageRecognitionService,
-        TranslationAndExplanationService translationAndExplanationService,
-        LlmConfigurationService llmConfigService,
-        ISqlSugarClient dbClient,
-        IWordRepository wordExplanationRepository, // Renamed
-        IWordCollectionRepository wordCollectionRepository,
-        ILogger<LlmController> logger)
-    {
-        _languageRecognitionService = languageRecognitionService;
-        _translationAndExplanationService = translationAndExplanationService;
-        _llmConfigService = llmConfigService;
-        _dbClient = dbClient;
-        _wordExplanationRepository = wordExplanationRepository; // Renamed
-        _wordCollectionRepository = wordCollectionRepository;
-        _logger = logger;
-    }
-
-    [HttpGet("RecognizeLanguage")]
+    [HttpGet]
     public async Task<ApiResult> RecognizeLanguage([FromQuery] string text)
     {
         if (string.IsNullOrEmpty(text))
         {
             return Fail("Text parameter is required.");
         }
-        var result = await _languageRecognitionService.RecognizeLanguageAsync(text);
+        var result = await languageRecognitionService.RecognizeLanguageAsync(text);
         return new SuccessfulResult<LanguageRecognitionResult>(result);
     }
 
-    [HttpGet("ExplainWordMarkdown")]
+    [HttpGet]
     public async Task<ApiResult> ExplainWordMarkdown([FromQuery] string text, [FromQuery] string targetLanguage)
     {
         if (string.IsNullOrEmpty(text)) return Fail("Text parameter is required.");
         if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
 
-        var agentConfigs = _llmConfigService.GetAgentConfigs();
+        var agentConfigs = llmConfigService.GetAgentConfigs();
         if (agentConfigs == null || !agentConfigs.Any())
         {
             return Fail("No LLM providers are configured.");
         }
         var agent = agentConfigs.First();
-        _logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
+        logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
 
-        var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage, agent);
+        var explanationResult = await translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage, agent);
 
         if (explanationResult.IsSuccess && explanationResult.Markdown != null)
         {
@@ -89,27 +67,27 @@ public class LlmController : BaseController
         }
     }
 
-    [HttpGet("ExplainWordStructured")]
+    [HttpGet]
     public async Task<ApiResult> ExplainWordStructured([FromQuery] string text, [FromQuery] string targetLanguage)
     {
         if (string.IsNullOrEmpty(text)) return Fail("Text parameter is required.");
         if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
-        
+
         // Note: GetStructuredExplanationAsync was marked as NotImplementedException in TranslationAndExplanationService
         // This will likely throw an exception until that service method is fully implemented.
         try
         {
-            var structuredResult = await _translationAndExplanationService.GetStructuredExplanationAsync(text, targetLanguage);
+            var structuredResult = await translationAndExplanationService.GetStructuredExplanationAsync(text, targetLanguage);
             return new SuccessfulResult<WordExplanationResult>(structuredResult);
         }
         catch (NotImplementedException ex)
         {
-            _logger.LogError(ex, "ExplainWordStructured endpoint hit a NotImplementedException from the service.");
+            logger.LogError(ex, "ExplainWordStructured endpoint hit a NotImplementedException from the service.");
             return Fail("This feature (structured explanation) is not fully implemented yet.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in ExplainWordStructured for text '{Text}' and target language '{TargetLanguage}'", text, targetLanguage);
+            logger.LogError(ex, "Error in ExplainWordStructured for text '{Text}' and target language '{TargetLanguage}'", text, targetLanguage);
             return Fail($"An error occurred: {ex.Message}");
         }
     }
@@ -119,7 +97,7 @@ public class LlmController : BaseController
     /// for words found in the WordCollection table.
     /// </summary>
     /// <returns>An ApiResult containing the total processed, skipped, and successfully added counts.</returns>
-    [HttpPost("FillWordExplanationsTable")] // Renamed endpoint for clarity
+    [HttpPost] // Renamed endpoint for clarity
     [ProducesResponseType(typeof(SuccessfulResult<object>), 200)]
     [ProducesResponseType(typeof(FailedResult), 500)]
     public async Task<ApiResult> FillWordExplanationsTable()
@@ -135,16 +113,16 @@ public class LlmController : BaseController
 
         try
         {
-            _logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, SourceWordLanguage: {SourceLang}",
+            logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, SourceWordLanguage: {SourceLang}",
                 TARGET_EXPLANATION_LANGUAGE, SOURCE_WORD_LANGUAGE);
 
-            var agentConfigs = _llmConfigService.GetAgentConfigs();
+            var agentConfigs = llmConfigService.GetAgentConfigs();
             if (agentConfigs == null || !agentConfigs.Any())
             {
-                _logger.LogError("No LLM providers are configured for FillWordExplanationsTable.");
+                logger.LogError("No LLM providers are configured for FillWordExplanationsTable.");
                 return Fail("No LLM providers are configured.");
             }
-            _logger.LogInformation("Found {AgentCount} LLM providers.", agentConfigs.Count);
+            logger.LogInformation("Found {AgentCount} LLM providers.", agentConfigs.Count);
 
             var unavailableProviders = new HashSet<string>();
             long currentLastId = 0; // Start from the beginning of WordCollection
@@ -153,18 +131,18 @@ public class LlmController : BaseController
             do
             {
                 // Fetch words from WordCollection where Language matches SOURCE_WORD_LANGUAGE
-                wordCollectionBatch = await _dbClient.Queryable<WordCollection>()
+                wordCollectionBatch = await dbClient.Queryable<WordCollection>()
                                            .Where(wc => wc.Id > currentLastId && wc.Language == SOURCE_WORD_LANGUAGE && wc.DeletedAt == null)
                                            .OrderBy(wc => wc.Id)
                                            .Take(BATCH_SIZE)
                                            .ToListAsync();
 
-                _logger.LogDebug("Fetched {Count} words from WordCollection (Language: {SourceLang}) starting after ID {LastId}",
+                logger.LogDebug("Fetched {Count} words from WordCollection (Language: {SourceLang}) starting after ID {LastId}",
                                  wordCollectionBatch.Count, SOURCE_WORD_LANGUAGE, currentLastId);
 
                 if (!wordCollectionBatch.Any())
                 {
-                    _logger.LogInformation("No more words found in WordCollection for language {SourceLang} after ID {LastId}. Ending process.",
+                    logger.LogInformation("No more words found in WordCollection for language {SourceLang} after ID {LastId}. Ending process.",
                                            SOURCE_WORD_LANGUAGE, currentLastId);
                     break;
                 }
@@ -176,18 +154,18 @@ public class LlmController : BaseController
 
                     if (string.IsNullOrWhiteSpace(wcRecord.WordText))
                     {
-                        _logger.LogWarning("Skipping WordCollection record with ID {Id} due to empty WordText.", wcRecord.Id);
+                        logger.LogWarning("Skipping WordCollection record with ID {Id} due to empty WordText.", wcRecord.Id);
                         continue;
                     }
 
                     // Check if an explanation already exists for this WordCollectionId and TargetExplanationLanguage
-                    bool explanationExists = await _dbClient.Queryable<WordExplanation>()
+                    bool explanationExists = await dbClient.Queryable<WordExplanation>()
                         .AnyAsync(we => we.WordCollectionId == wcRecord.Id && we.ExplanationLanguage == TARGET_EXPLANATION_LANGUAGE);
 
                     if (explanationExists)
                     {
                         skippedExisting++;
-                        _logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Explanation already exists for language {TargetLang}.",
+                        logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Explanation already exists for language {TargetLang}.",
                                          wcRecord.Id, wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE);
                         continue;
                     }
@@ -196,7 +174,7 @@ public class LlmController : BaseController
                     if (wcRecord.Language != SOURCE_WORD_LANGUAGE)
                     {
                         skippedWrongLanguage++;
-                         _logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Language '{ActualLang}' does not match target '{TargetSourceLang}'.",
+                         logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Language '{ActualLang}' does not match target '{TargetSourceLang}'.",
                                          wcRecord.Id, wcRecord.WordText, wcRecord.Language, SOURCE_WORD_LANGUAGE);
                         continue;
                     }
@@ -205,7 +183,7 @@ public class LlmController : BaseController
                     {
                         if (unavailableProviders.Count == agentConfigs.Count)
                         {
-                            _logger.LogCritical("All LLM providers are currently unavailable. Aborting FillWordExplanationsTable process.");
+                            logger.LogCritical("All LLM providers are currently unavailable. Aborting FillWordExplanationsTable process.");
                             return Fail("All LLM providers are currently unavailable.");
                         }
 
@@ -216,19 +194,19 @@ public class LlmController : BaseController
                         {
                             if (unavailableProviders.Contains(agent.ApiProvider)) continue;
 
-                            _logger.LogDebug("Trying provider {Provider} for word '{WordText}' (WC ID: {WCId})",
+                            logger.LogDebug("Trying provider {Provider} for word '{WordText}' (WC ID: {WCId})",
                                              agent.ApiProvider, wcRecord.WordText, wcRecord.Id);
-                            var explanationResult = await _translationAndExplanationService.GetMarkdownExplanationAsync(wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE, agent);
+                            var explanationResult = await translationAndExplanationService.GetMarkdownExplanationAsync(wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE, agent);
 
                             if (explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
                             {
                                 successfulResult = explanationResult;
                                 usedAgent = agent;
-                                _logger.LogInformation("Successfully got explanation from provider {Provider} for word '{WordText}' (WC ID: {WCId}) using model {ModelName}",
+                                logger.LogInformation("Successfully got explanation from provider {Provider} for word '{WordText}' (WC ID: {WCId}) using model {ModelName}",
                                                        agent.ApiProvider, wcRecord.WordText, wcRecord.Id, explanationResult.ModelName);
                                 break;
                             }
-                            
+
                             string errorMsg = explanationResult.ErrorMessage ?? "Unknown error";
                             if (explanationResult.HttpStatusCode.HasValue)
                             {
@@ -236,12 +214,12 @@ public class LlmController : BaseController
                                 errorMsg += $" (HTTP Status: {statusCode})";
                                 if (statusCode >= 400 && statusCode < 500)
                                 {
-                                    _logger.LogWarning("Marking provider {Provider} as unavailable due to HTTP {StatusCode} for word '{WordText}' (WC ID: {WCId}): {Error}",
+                                    logger.LogWarning("Marking provider {Provider} as unavailable due to HTTP {StatusCode} for word '{WordText}' (WC ID: {WCId}): {Error}",
                                                        agent.ApiProvider, statusCode, wcRecord.WordText, wcRecord.Id, errorMsg);
                                     unavailableProviders.Add(agent.ApiProvider);
                                 }
                             }
-                            _logger.LogWarning("Provider {Provider} failed for word '{WordText}' (WC ID: {WCId}): {Error}",
+                            logger.LogWarning("Provider {Provider} failed for word '{WordText}' (WC ID: {WCId}): {Error}",
                                                agent.ApiProvider, wcRecord.WordText, wcRecord.Id, errorMsg);
                         }
 
@@ -261,41 +239,41 @@ public class LlmController : BaseController
                             try
                             {
                                 // Using direct DB client insert for WordExplanation
-                                var insertResult = await _dbClient.Insertable(newExplanation).ExecuteCommandAsync();
+                                var insertResult = await dbClient.Insertable(newExplanation).ExecuteCommandAsync();
                                 if (insertResult > 0)
                                 {
                                     successfullyAdded++;
-                                    _logger.LogDebug("Successfully added WordExplanation for WC ID: {WCId}, Text: {WordText}",
+                                    logger.LogDebug("Successfully added WordExplanation for WC ID: {WCId}, Text: {WordText}",
                                                      wcRecord.Id, wcRecord.WordText);
                                 }
                                 else
                                 {
-                                    _logger.LogWarning("Failed to insert WordExplanation for WC ID: {WCId}, Text: {WordText} (ExecuteCommandAsync returned 0)",
+                                    logger.LogWarning("Failed to insert WordExplanation for WC ID: {WCId}, Text: {WordText} (ExecuteCommandAsync returned 0)",
                                                      wcRecord.Id, wcRecord.WordText);
                                 }
                             }
                             catch (Exception dbEx)
                             {
-                                _logger.LogError(dbEx, "Database error inserting WordExplanation for WC ID: {WCId}, Text: {WordText}. Possible duplicate or other constraint violation?",
+                                logger.LogError(dbEx, "Database error inserting WordExplanation for WC ID: {WCId}, Text: {WordText}. Possible duplicate or other constraint violation?",
                                                  wcRecord.Id, wcRecord.WordText);
                             }
                         }
                         else
                         {
-                            _logger.LogWarning("All available providers failed for WordCollection ID: {WCId}, Text: {WordText}.",
+                            logger.LogWarning("All available providers failed for WordCollection ID: {WCId}, Text: {WordText}.",
                                              wcRecord.Id, wcRecord.WordText);
                         }
                     }
                     catch (Exception serviceEx)
                     {
-                        _logger.LogError(serviceEx, "Error processing WordCollection ID: {WCId}, Text: {WordText}",
+                        logger.LogError(serviceEx, "Error processing WordCollection ID: {WCId}, Text: {WordText}",
                                          wcRecord.Id, wcRecord.WordText);
                     }
                     // await Task.Delay(100); // Optional delay
                 }
             } while (wordCollectionBatch.Any());
 
-            _logger.LogInformation("FillWordExplanationsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}, Skipped (Existing): {SkippedExisting}, Skipped (Wrong Lang): {SkippedWrongLang}",
+            logger.LogInformation("FillWordExplanationsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}, Skipped (Existing): {SkippedExisting}, Skipped (Wrong Lang): {SkippedWrongLang}",
                                  totalProcessed, successfullyAdded, skippedExisting, skippedWrongLanguage);
             return new SuccessfulResult<object>(new
             {
@@ -307,7 +285,7 @@ public class LlmController : BaseController
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception during FillWordExplanationsTable process.");
+            logger.LogError(ex, "Unhandled exception during FillWordExplanationsTable process.");
             return Fail($"An error occurred: {ex.Message}");
         }
     }
