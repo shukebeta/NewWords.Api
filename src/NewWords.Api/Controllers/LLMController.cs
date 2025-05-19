@@ -7,7 +7,6 @@ using SqlSugar;
 using NewWords.Api.Entities;
 using LLM.Configuration;
 using Api.Framework.Extensions;
-using NewWords.Api.Services;
 using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers;
@@ -17,7 +16,6 @@ namespace NewWords.Api.Controllers;
 /// </summary>
 [Authorize]
 public class LlmController(
-    ICurrentUser currentUser,
     LanguageRecognitionService languageRecognitionService,
     TranslationAndExplanationService translationAndExplanationService,
     LlmConfigurationService llmConfigService,
@@ -43,7 +41,7 @@ public class LlmController(
         if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
 
         var agentConfigs = llmConfigService.GetAgentConfigs();
-        if (agentConfigs == null || !agentConfigs.Any())
+        if (!agentConfigs.Any())
         {
             return Fail("No LLM providers are configured.");
         }

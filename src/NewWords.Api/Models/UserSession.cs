@@ -7,9 +7,9 @@ public class UserSession
 {
     public string Token { get; init; } = string.Empty;
     public long UserId { get; set; }
-    public string Email { get; set; }
-    public string NativeLanguage { get; set; }
-    public string CurrentLearningLanguage { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string NativeLanguage { get; set; } = string.Empty;
+    public string CurrentLearningLanguage { get; set; } = string.Empty;
 
     public UserSession From(User user)
     {

@@ -56,7 +56,7 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
         /// <summary>
         /// The user's learning status for this word.
         /// </summary>
-        public WordStatus Status { get; set; }
+        public FamiliarityLevel Status { get; set; }
 
         /// <summary>
         /// Unix timestamp when the user added this word.

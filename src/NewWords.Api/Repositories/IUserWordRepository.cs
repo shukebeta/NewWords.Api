@@ -7,7 +7,7 @@ namespace NewWords.Api.Repositories
     public interface IUserWordRepository : IRepositoryBase<UserWord>
     {
         Task<UserWord?> GetByUserAndWordIdAsync(long userId, int wordId);
-        Task<List<UserWord>> GetUserWordsAsync(long userId, WordStatus? status, int page, int pageSize);
-        Task<int> GetUserWordsCountAsync(long userId, WordStatus? status);
+        Task<List<UserWord>> GetUserWordsAsync(long userId, FamiliarityLevel? status, int page, int pageSize);
+        Task<int> GetUserWordsCountAsync(long userId, FamiliarityLevel? status);
     }
 }

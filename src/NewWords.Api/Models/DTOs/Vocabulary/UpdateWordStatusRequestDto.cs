@@ -12,7 +12,7 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
         /// The new learning status for the word.
         /// </summary>
         [Required]
-        [EnumDataType(typeof(WordStatus))] // Validate that the value is a valid WordStatus enum member
-        public WordStatus NewStatus { get; set; }
+        [EnumDataType(typeof(FamiliarityLevel))] // Validate that the value is a valid WordStatus enum member
+        public FamiliarityLevel NewStatus { get; set; }
     }
 }

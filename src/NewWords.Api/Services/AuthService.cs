@@ -10,7 +10,7 @@ using NewWords.Api.Models;
 
 namespace NewWords.Api.Services
 {
-    public class AuthService(Repositories.IUserRepository userRepository, IConfiguration configuration)
+    public class AuthService(Repositories.IUserRepository userRepository)
         : IAuthService
     {
         public async Task<UserSession> RegisterAsync(RegisterRequest request, JwtConfig jwtConfig)
@@ -90,9 +90,9 @@ namespace NewWords.Api.Services
             return new UserSession()
             {
                 Token = token,
-            }.From(validateResult.user);
+            }.From(validateResult.user!);
         }
-        private async Task<(bool isValidLogin, User user)> _IsValidLogin(string email, string password)
+        private async Task<(bool isValidLogin, User? user)> _IsValidLogin(string email, string password)
         {
             var user = await userRepository.GetFirstOrDefaultAsync(x => x.Email == email);
             var isValidLogin = user != null && user.PasswordHash.Equals(CommonHelper.CalculateSha256Hash(password + user.Salt));

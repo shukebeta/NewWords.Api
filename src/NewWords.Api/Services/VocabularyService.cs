@@ -5,10 +5,7 @@ using NewWords.Api.Repositories; // Added for repository interfaces
 using SqlSugar;
 using LLM.Services; // For TranslationAndExplanationService
 using LLM.Configuration; // For LlmConfigurationService and AgentConfig
-using Microsoft.Extensions.Logging; // Added ILogger
-using System; // Added for Exception and ArgumentException
-using System.Linq; // Added for Linq operations like .First() and .Any()
-using System.Threading.Tasks; // Added for Task
+using Api.Framework; // Added for Task
 
 namespace NewWords.Api.Services
 {
@@ -17,8 +14,8 @@ namespace NewWords.Api.Services
         TranslationAndExplanationService translationAndExplanationService,
         LlmConfigurationService llmConfigurationService,
         ILogger<VocabularyService> logger,
-        IWordCollectionRepository wordCollectionRepository,
-        IWordRepository wordExplanationRepository,
+        IRepositoryBase<WordCollection> wordCollectionRepository,
+        IRepositoryBase<WordExplanation> wordExplanationRepository,
         IUserWordRepository userWordRepository)
         : IVocabularyService
     {

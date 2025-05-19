@@ -12,7 +12,7 @@ namespace NewWords.Api.Repositories
             return await GetFirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordExplanationId == wordId);
         }
 
-        public async Task<List<UserWord>> GetUserWordsAsync(long userId, WordStatus? status, int page, int pageSize)
+        public async Task<List<UserWord>> GetUserWordsAsync(long userId, FamiliarityLevel? status, int page, int pageSize)
         {
             var query = db.Queryable<UserWord>()
                 .Where(uw => uw.UserId == userId);
@@ -32,7 +32,7 @@ namespace NewWords.Api.Repositories
                 .ToListAsync();
         }
 
-        public async Task<int> GetUserWordsCountAsync(long userId, WordStatus? status)
+        public async Task<int> GetUserWordsCountAsync(long userId, FamiliarityLevel? status)
         {
             var query = db.Queryable<UserWord>()
                 .Where(uw => uw.UserId == userId);

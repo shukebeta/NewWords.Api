@@ -41,13 +41,6 @@ namespace NewWords.Api.Controllers
         public async Task<ApiResult<WordExplanation>> Add(AddWordRequest addWordRequest)
         {
             var userId = currentUser.Id;
-            if (userId == 0)
-            {
-                // This should ideally be handled by [Authorize] and a proper authentication middleware
-                // returning a 401, but for now, an ArgumentException is thrown if ICurrentUser somehow has Id=0.
-                throw new ArgumentException("User not authenticated or ID not found.");
-            }
-
             var addedWordExplanation = await vocabularyService.AddUserWordAsync(
                 userId,
                 addWordRequest.WordText,

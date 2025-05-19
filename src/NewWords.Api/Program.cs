@@ -49,10 +49,8 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IVocabularyService, VocabularyService>();
 builder.Services.AddScoped<IQueryHistoryService, QueryHistoryService>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IUserRepository, NewWords.Api.Repositories.UserRepository>();
-builder.Services.AddScoped<NewWords.Api.Repositories.IWordRepository, NewWords.Api.Repositories.WordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.IUserWordRepository, NewWords.Api.Repositories.UserWordRepository>();
 builder.Services.AddScoped<NewWords.Api.Repositories.ILlmConfigurationRepository, NewWords.Api.Repositories.LlmConfigurationRepository>();
-builder.Services.AddScoped<NewWords.Api.Repositories.IWordCollectionRepository, NewWords.Api.Repositories.WordCollectionRepository>(); // Added registration
 builder.Services.AddScoped<LLM.Configuration.LlmConfigurationService>();
 builder.Services.AddScoped<LLM.Services.LanguageRecognitionService>();
 builder.Services.AddScoped<LLM.Services.TranslationAndExplanationService>();

@@ -34,7 +34,7 @@ namespace NewWords.Api.Entities
         /// The user's current learning status for this word. Required. Defaults to New.
         /// </summary>
         [SugarColumn(IsNullable = false)]
-        public WordStatus Status { get; set; } = WordStatus.New;
+        public FamiliarityLevel Status { get; set; } = FamiliarityLevel.New;
 
         /// <summary>
         /// Timestamp when the user added this word to their list (Required, Unix timestamp as long).
