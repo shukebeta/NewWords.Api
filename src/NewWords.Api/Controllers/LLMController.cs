@@ -18,6 +18,7 @@ namespace NewWords.Api.Controllers;
 public class LlmController(
     LanguageRecognitionService languageRecognitionService,
     TranslationAndExplanationService translationAndExplanationService,
+    LanguageService languageService,
     LlmConfigurationService llmConfigService,
     ISqlSugarClient dbClient,
     ILogger<LlmController> logger)
@@ -48,7 +49,7 @@ public class LlmController(
         var agent = agentConfigs.First();
         logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
 
-        var explanationResult = await translationAndExplanationService.GetMarkdownExplanationAsync(text, targetLanguage, agent);
+        var explanationResult = await languageService.GetMarkdownExplanationAsync(text, targetLanguage, agent.ApiBaseUrl, agent.ApiKey, agent.Models.First());
 
         if (explanationResult.IsSuccess && explanationResult.Markdown != null)
         {
