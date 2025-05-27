@@ -24,6 +24,11 @@ public class LlmController(
     ILogger<LlmController> logger)
     : BaseController
 {
+    /// <summary>
+    /// Endpoint to recognize the language of a given text. We should use a speedy language recognition model for it
+    /// </summary>
+    /// <param name="text"></param>
+    /// <returns></returns>
     [HttpGet]
     public async Task<ApiResult> RecognizeLanguage([FromQuery] string text)
     {

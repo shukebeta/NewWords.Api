@@ -166,7 +166,7 @@ My request is: {inputText}
 
         var requestBody = new
         {
-            model = model,
+            model,
             messages = new[]
             {
                 new { role = "system", content = systemPrompt },
