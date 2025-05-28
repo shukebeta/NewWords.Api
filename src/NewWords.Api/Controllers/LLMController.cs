@@ -54,7 +54,7 @@ public class LlmController(
         var agent = agentConfigs.First();
         logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
 
-        var explanationResult = await languageService.GetMarkdownExplanationAsync(text, targetLanguage, agent.ApiBaseUrl, agent.ApiKey, agent.Models.First());
+        var explanationResult = await languageService.GetMarkdownExplanationAsync(text, "zh-CN", targetLanguage, agent.ApiBaseUrl, agent.ApiKey, agent.Models.First());
 
         if (explanationResult.IsSuccess && explanationResult.Markdown != null)
         {

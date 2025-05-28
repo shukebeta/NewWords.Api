@@ -19,6 +19,7 @@ public class LanguageService()
     /// <returns>Explanation result</returns>
     public async Task<ExplanationResult> GetMarkdownExplanationAsync(
         string inputText,
+        string nativeLanguage,
         string targetLanguage,
         string apiBaseUrl,
         string apiKey,
@@ -37,30 +38,30 @@ public class LanguageService()
             string apiUrl = apiBaseUrl.TrimEnd('/') + "/chat/completions";
 
             // Build the prompt
-            var userPrompt = $@"You are a language learning assistant that provides detailed explanations when given a word or phrase. When I provide a word or phrase in any language and specify my target Language ""{targetLanguage}"", please respond with:
+            var userPrompt = $@"nativeLanguage={nativeLanguage} 
+targetLanguage={targetLanguage}
+你是一个精通多种语言的语言专家，在不同语言文化环境中都有丰富的生活经验，你了解各种物品、行为、事物在不同语言中的具体概念和文化内涵。
+我的母语是 {nativeLanguage}，我正在学习 {targetLanguage}，我在 {targetLanguage} 国家/地区没有生活经验。
+任务要求 如果我给你一个 {targetLanguage} 词汇或短语：
+用 {nativeLanguage} 向我解释这个词汇的含义 解释它在不同领域、不同语境下的常见含义 提供文化背景信息（如适用）
+如果我给你一个 {nativeLanguage} 词汇或短语：
+用 {nativeLanguage} 告诉我在 {targetLanguage} 里这通常被称为什么 如果有多个对应表达，请都列出来并说明使用场景
+格式要求
+{targetLanguage} 词汇（包含音标）+ {nativeLanguage} 解释 + {targetLanguage} 例句 + 紧密相关的 {targetLanguage} 词汇和解释；如果有相差较大的不同含义，请分别解释；要清晰的分段，合理使用粗体标题，以易于阅读。不要使用代码块格式，直接输出markdown内容。
+格式范例 当我给你母语词汇""示例词汇""时，你应该这样响应：""示例词汇""通常被称为""example word"" /ɪɡˈzæmpl wɜːrd/ 如果有多个表达方式，会列出：
+sample term /ˈsæmpl tɜːrm/ - 更正式的表达 demo word /ˈdemoʊ wɜːrd/ - 更口语化的表达
+举例来说，当我给你 {targetLanguage} 词汇 example 时，你应该这样回应：
+example /ɪɡˈzæmpl/ 的意思是""示例、例子""
+意思解释： 它指的是用来说明或证明某个观点、规则或概念的具体实例。在不同领域有不同的应用场景。
+例句：
+Can you give me an example of how this works? 你能给我举个例子说明这是如何工作的吗？ This painting is a perfect example of Renaissance art. 这幅画是文艺复兴艺术的完美范例。 For example, you could try using a different approach. 例如，你可以尝试使用不同的方法。
+相关词汇：
+instance /ˈɪnstəns/：实例，更正式的表达 sample /ˈsæmpl/：样本，样例 illustration /ˌɪləˈstreɪʃn/：说明，例证 case [keɪs]：案例，情况
+重要提醒 如果涉及文化特定概念，请提供简短的文化背景。音标使用国际音标(IPA)格式。
 
-1. The word/phrase with its IPA Transcription
-2. Any relevant grammatical information (tense, part of speech, etc.) in ""{targetLanguage}""
-3. A clear definition
-4. 2-3 example sentences using the word/phrase in original language with translations
-5. 3-4 related words/synonyms/antonyms with pronunciations and translations and one example sentence
+我的输入是：: {inputText}";
 
-If I provide a complete sentence instead of a single word or phrase, please:
-1. Provide a clear translation of the full sentence in the target language
-2. Break down the sentence structure and explain its grammatical components
-3. Identify and explain any idioms, colloquialisms, or potentially difficult parts of the sentence
-4. Provide alternative ways to express the same meaning
-
-Important: Do not label translations with ""{targetLanguage}:"" before each translated sentence. Simply provide the translation directly after the original sentence.
-
-Format your response in a clear, structured way with bold headings and good spacing to make it easy to read. 
-**IMPORTANT:**
-RESPOND WITH THE MARKDOWN CONTENT ONLY.
-DO NOT INCLUDE ANY INTRODUCTORY TEXT, CONCLUDING REMARKS, OR CODE FENCES (like ```markdown)'
-
-My request is: {inputText}";
-
-            var systemPrompt = "You are a linguistic expert generating helpful, concise Markdown explanations for language learners. Respond ONLY with the requested Markdown text, nothing else.";
+            var systemPrompt = "注意：只输出markdown格式的内容，不要包含任何介绍性文字或代码块标记";
 
             // Build the request body
             var requestData = new
@@ -128,6 +129,7 @@ My request is: {inputText}";
     /// </summary>
     public async Task<ExplanationResult> GetMarkdownExplanationWithFallbackAsync(
         string inputText,
+        string nativeLanguage,
         string targetLanguage,
         string apiBaseUrl,
         string apiKey,
@@ -138,7 +140,7 @@ My request is: {inputText}";
 
         foreach (var model in models)
         {
-            var result = await GetMarkdownExplanationAsync(inputText, targetLanguage, apiBaseUrl, apiKey, model);
+            var result = await GetMarkdownExplanationAsync(inputText, nativeLanguage, targetLanguage, apiBaseUrl, apiKey, model);
             if (result.IsSuccess)
                 return result;
         }
