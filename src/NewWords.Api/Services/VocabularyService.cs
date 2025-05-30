@@ -3,20 +3,22 @@ using Api.Framework.Extensions; // For ToUnixTimeSeconds
 using NewWords.Api.Entities;
 using NewWords.Api.Repositories; // Added for repository interfaces
 using SqlSugar;
-using LLM.Services; // For TranslationAndExplanationService
 using LLM.Configuration; // For LlmConfigurationService and AgentConfig
-using Api.Framework; // Added for Task
+using Api.Framework;
+using LLM;
+using NewWords.Api.Helpers; // Added for Task
 
 namespace NewWords.Api.Services
 {
     public class VocabularyService(
         ISqlSugarClient db,
-        TranslationAndExplanationService translationAndExplanationService,
+        ILanguageService languageService,
         LlmConfigurationService llmConfigurationService,
         ILogger<VocabularyService> logger,
         IRepositoryBase<WordCollection> wordCollectionRepository,
         IRepositoryBase<WordExplanation> wordExplanationRepository,
-        IUserWordRepository userWordRepository)
+        IUserWordRepository userWordRepository,
+        LanguageHelper languageHelper)
         : IVocabularyService
     {
         // Handles WordExplanation entities
@@ -56,7 +58,7 @@ namespace NewWords.Api.Services
                 await _HandleUserWord(userId, explanation);
 
                 await db.AsTenant().CommitTranAsync();
-                return explanation!;
+                return explanation;
             }
             catch (Exception ex) // Catch exceptions from UseTranAsync or input validation
             {
@@ -101,9 +103,10 @@ namespace NewWords.Api.Services
 
                 var agentConfig = agentConfigs.First();
 
+                var wordLanguageName = languageHelper.GetLanguageName(wordLanguage)!;
+                var explanationLanguageName = languageHelper.GetLanguageName(explanationLanguage)!;
                 var explanationResult =
-                    await translationAndExplanationService.GetMarkdownExplanationAsync(wordText,
-                        explanationLanguage, agentConfig);
+                    await languageService.GetMarkdownExplanationAsync(wordText, explanationLanguageName, wordLanguageName, agentConfig.ApiBaseUrl, agentConfig.ApiKey, agentConfig.Models[0]);
 
                 if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
                 {

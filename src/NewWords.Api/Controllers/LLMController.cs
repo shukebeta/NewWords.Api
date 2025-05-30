@@ -7,6 +7,7 @@ using SqlSugar;
 using NewWords.Api.Entities;
 using LLM.Configuration;
 using Api.Framework.Extensions;
+using LLM;
 using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers;
@@ -17,8 +18,7 @@ namespace NewWords.Api.Controllers;
 [Authorize]
 public class LlmController(
     LanguageRecognitionService languageRecognitionService,
-    TranslationAndExplanationService translationAndExplanationService,
-    LanguageService languageService,
+    ILanguageService languageService,
     LlmConfigurationService llmConfigService,
     ISqlSugarClient dbClient,
     ILogger<LlmController> logger)
@@ -71,31 +71,6 @@ public class LlmController(
         }
     }
 
-    [HttpGet]
-    public async Task<ApiResult> ExplainWordStructured([FromQuery] string text, [FromQuery] string targetLanguage)
-    {
-        if (string.IsNullOrEmpty(text)) return Fail("Text parameter is required.");
-        if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
-
-        // Note: GetStructuredExplanationAsync was marked as NotImplementedException in TranslationAndExplanationService
-        // This will likely throw an exception until that service method is fully implemented.
-        try
-        {
-            var structuredResult = await translationAndExplanationService.GetStructuredExplanationAsync(text, targetLanguage);
-            return new SuccessfulResult<WordExplanationResult>(structuredResult);
-        }
-        catch (NotImplementedException ex)
-        {
-            logger.LogError(ex, "ExplainWordStructured endpoint hit a NotImplementedException from the service.");
-            return Fail("This feature (structured explanation) is not fully implemented yet.");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in ExplainWordStructured for text '{Text}' and target language '{TargetLanguage}'", text, targetLanguage);
-            return Fail($"An error occurred: {ex.Message}");
-        }
-    }
-
     /// <summary>
     /// One-off endpoint to populate the WordExplanations table with Markdown explanations
     /// for words found in the WordCollection table.
@@ -106,8 +81,8 @@ public class LlmController(
     [ProducesResponseType(typeof(FailedResult), 500)]
     public async Task<ApiResult> FillWordExplanationsTable()
     {
-        const string TARGET_EXPLANATION_LANGUAGE = "zh-CN"; // Example: Target language for explanations
-        const string SOURCE_WORD_LANGUAGE = "en";      // Example: Process only English words from WordCollection
+        const string NativeLanguage = "zh-CN"; // Example: Target language for explanations
+        const string LearnLanguage = "en";      // Example: Process only English words from WordCollection
         const int BATCH_SIZE = 50;
 
         long totalProcessed = 0;
@@ -118,7 +93,7 @@ public class LlmController(
         try
         {
             logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, SourceWordLanguage: {SourceLang}",
-                TARGET_EXPLANATION_LANGUAGE, SOURCE_WORD_LANGUAGE);
+                NativeLanguage, LearnLanguage);
 
             var agentConfigs = llmConfigService.GetAgentConfigs();
             if (agentConfigs == null || !agentConfigs.Any())
@@ -136,18 +111,18 @@ public class LlmController(
             {
                 // Fetch words from WordCollection where Language matches SOURCE_WORD_LANGUAGE
                 wordCollectionBatch = await dbClient.Queryable<WordCollection>()
-                                           .Where(wc => wc.Id > currentLastId && wc.Language == SOURCE_WORD_LANGUAGE && wc.DeletedAt == null)
+                                           .Where(wc => wc.Id > currentLastId && wc.Language == LearnLanguage && wc.DeletedAt == null)
                                            .OrderBy(wc => wc.Id)
                                            .Take(BATCH_SIZE)
                                            .ToListAsync();
 
                 logger.LogDebug("Fetched {Count} words from WordCollection (Language: {SourceLang}) starting after ID {LastId}",
-                                 wordCollectionBatch.Count, SOURCE_WORD_LANGUAGE, currentLastId);
+                                 wordCollectionBatch.Count, LearnLanguage, currentLastId);
 
                 if (!wordCollectionBatch.Any())
                 {
                     logger.LogInformation("No more words found in WordCollection for language {SourceLang} after ID {LastId}. Ending process.",
-                                           SOURCE_WORD_LANGUAGE, currentLastId);
+                                           LearnLanguage, currentLastId);
                     break;
                 }
 
@@ -164,22 +139,22 @@ public class LlmController(
 
                     // Check if an explanation already exists for this WordCollectionId and TargetExplanationLanguage
                     bool explanationExists = await dbClient.Queryable<WordExplanation>()
-                        .AnyAsync(we => we.WordCollectionId == wcRecord.Id && we.ExplanationLanguage == TARGET_EXPLANATION_LANGUAGE);
+                        .AnyAsync(we => we.WordCollectionId == wcRecord.Id && we.ExplanationLanguage == NativeLanguage);
 
                     if (explanationExists)
                     {
                         skippedExisting++;
                         logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Explanation already exists for language {TargetLang}.",
-                                         wcRecord.Id, wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE);
+                                         wcRecord.Id, wcRecord.WordText, NativeLanguage);
                         continue;
                     }
 
                     // This check is now part of the initial query, but kept for safety / clarity if query changes
-                    if (wcRecord.Language != SOURCE_WORD_LANGUAGE)
+                    if (wcRecord.Language != LearnLanguage)
                     {
                         skippedWrongLanguage++;
                          logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Language '{ActualLang}' does not match target '{TargetSourceLang}'.",
-                                         wcRecord.Id, wcRecord.WordText, wcRecord.Language, SOURCE_WORD_LANGUAGE);
+                                         wcRecord.Id, wcRecord.WordText, wcRecord.Language, LearnLanguage);
                         continue;
                     }
 
@@ -200,7 +175,7 @@ public class LlmController(
 
                             logger.LogDebug("Trying provider {Provider} for word '{WordText}' (WC ID: {WCId})",
                                              agent.ApiProvider, wcRecord.WordText, wcRecord.Id);
-                            var explanationResult = await translationAndExplanationService.GetMarkdownExplanationAsync(wcRecord.WordText, TARGET_EXPLANATION_LANGUAGE, agent);
+                            var explanationResult = await languageService.GetMarkdownExplanationAsync(wcRecord.WordText, NativeLanguage, LearnLanguage, agent.ApiBaseUrl, agent.ApiKey, agent.Models[0]);
 
                             if (explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
                             {
@@ -234,7 +209,7 @@ public class LlmController(
                                 WordCollectionId = wcRecord.Id,
                                 WordText = wcRecord.WordText, // Denormalized
                                 WordLanguage = wcRecord.Language, // Denormalized (should be SOURCE_WORD_LANGUAGE)
-                                ExplanationLanguage = TARGET_EXPLANATION_LANGUAGE,
+                                ExplanationLanguage = NativeLanguage,
                                 MarkdownExplanation = successfulResult.Markdown,
                                 CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
                                 ProviderModelName = $"{usedAgent.ApiProvider}:{successfulResult.ModelName}"
