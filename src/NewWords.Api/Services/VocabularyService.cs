@@ -68,6 +68,21 @@ namespace NewWords.Api.Services
             }
         }
 
+        public async Task DelUserWordAsync(int userId, long wordExplanationId)
+        {
+            var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
+                uw.UserId == userId && uw.WordExplanationId == wordExplanationId);
+
+            if (userWord != null)
+            {
+                await userWordRepository.DeleteAsync(userWord);
+            }
+            else
+            {
+                logger.LogWarning($"UserWord not found for deletion - UserId: {userId}, WordExplanationId: {wordExplanationId}");
+            }
+        }
+
         private async Task _HandleUserWord(int userId, WordExplanation explanationToReturn)
         {
             var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>

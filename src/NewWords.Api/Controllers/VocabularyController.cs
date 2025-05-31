@@ -10,7 +10,10 @@ using NewWords.Api.Services.interfaces;
 namespace NewWords.Api.Controllers
 {
     [Authorize]
-    public class VocabularyController(IVocabularyService vocabularyService, IQueryHistoryService queryHistoryService, ICurrentUser currentUser)
+    public class VocabularyController(
+        IVocabularyService vocabularyService,
+        IQueryHistoryService queryHistoryService,
+        ICurrentUser currentUser)
         : BaseController
     {
         /// <summary>
@@ -50,6 +53,23 @@ namespace NewWords.Api.Controllers
 
             queryHistoryService.LogQueryAsync(addedWordExplanation.WordCollectionId, currentUser.Id);
             return new SuccessfulResult<WordExplanation>(addedWordExplanation);
+        }
+
+        /// <summary>
+        /// Deletes a word from the current user's list.
+        /// </summary>
+        /// <param name="wordExplanationId">The ID of the word explanation to delete.</param>
+        [HttpDelete("{wordExplanationId}")]
+        public async Task<ApiResult> Delete(long wordExplanationId)
+        {
+            var userId = currentUser.Id;
+            if (userId == 0)
+            {
+                throw new ArgumentException("User not authenticated or ID not found.");
+            }
+
+            await vocabularyService.DelUserWordAsync(userId, wordExplanationId);
+            return Success();
         }
     }
 }

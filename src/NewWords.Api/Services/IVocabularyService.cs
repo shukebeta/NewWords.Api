@@ -8,5 +8,6 @@ namespace NewWords.Api.Services
     {
         Task<PageData<WordExplanation>> GetUserWordsAsync(int userId, int pageSize, int pageNumber);
         Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string wordLanguage, string explanationLanguage);
+        Task DelUserWordAsync(int userId, long wordExplanationId);
     }
 }
