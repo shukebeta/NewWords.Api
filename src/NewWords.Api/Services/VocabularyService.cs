@@ -27,11 +27,14 @@ namespace NewWords.Api.Services
         {
             RefAsync<int> totalCount = 0;
             // Using _db directly for complex query; repositories are for simpler CRUD in this context.
-            var pagedWords = await db.Queryable<UserWord>()
-                .LeftJoin<WordExplanation>((uwe, we) => uwe.WordExplanationId == we.Id)
-                .Where(uwe => uwe.UserId == userId)
-                .OrderBy(uwe => uwe.CreatedAt, OrderByType.Desc)
-                .Select((uwe, we) => we)
+            var pagedWords = await db.Queryable<WordExplanation>()
+                .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
+                .Where((we,uw) => uw.UserId == userId)
+                .OrderBy((we,uw) => uw.CreatedAt, OrderByType.Desc)
+                .Select((we, uw) => new WordExplanation()
+                {
+                    CreatedAt = uw.CreatedAt,
+                }, true)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
             return new PageData<WordExplanation>
