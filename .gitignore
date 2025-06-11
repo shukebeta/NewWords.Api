@@ -67,3 +67,10 @@ riderModule.iml
 appsettings.Local.json
 appsettings.Development.json
 .vscode
+logs
+alembic*
+memory-bank
+generate_mcp_yaml.py
+install_rooflow_conport.sh
+system_prompt.md
+
