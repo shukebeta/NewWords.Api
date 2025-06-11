@@ -17,7 +17,6 @@ namespace NewWords.Api.Controllers;
 /// </summary>
 [Authorize]
 public class LlmController(
-    LanguageRecognitionService languageRecognitionService,
     ILanguageService languageService,
     LlmConfigurationService llmConfigService,
     ISqlSugarClient dbClient,
@@ -36,8 +35,19 @@ public class LlmController(
         {
             return Fail("Text parameter is required.");
         }
-        var result = await languageRecognitionService.RecognizeLanguageAsync(text);
-        return new SuccessfulResult<LanguageRecognitionResult>(result);
+        var agentConfigs = llmConfigService.GetAgentConfigs();
+        if (!agentConfigs.Any())
+        {
+            return Fail("No LLM providers are configured.");
+        }
+        var agent1 = agentConfigs.First();
+        var result = await languageService.GetDetectedLanguageAsync(text, new Agent()
+        {
+            BaseUrl = agent1.BaseUrl,
+            ApiKey = agent1.ApiKey,
+            ModelName = agent1.Models.First(),
+        });
+        return new SuccessfulResult<LanguageDetectionResult>(result);
     }
 
     [HttpGet]
@@ -52,9 +62,9 @@ public class LlmController(
             return Fail("No LLM providers are configured.");
         }
         var agent = agentConfigs.First();
-        logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.ApiProvider, text);
+        logger.LogInformation("Using agent {AgentProvider} for ExplainWordMarkdown for text '{Text}'", agent.Provider, text);
 
-        var explanationResult = await languageService.GetMarkdownExplanationAsync(text, "zh-CN", targetLanguage, agent.ApiBaseUrl, agent.ApiKey, agent.Models.First());
+        var explanationResult = await languageService.GetMarkdownExplanationAsync(text, "zh-CN", targetLanguage, agent.BaseUrl, agent.ApiKey, agent.Models.First());
 
         if (explanationResult.IsSuccess && explanationResult.Markdown != null)
         {
@@ -171,18 +181,18 @@ public class LlmController(
 
                         foreach (var agent in agentConfigs)
                         {
-                            if (unavailableProviders.Contains(agent.ApiProvider)) continue;
+                            if (unavailableProviders.Contains(agent.Provider)) continue;
 
                             logger.LogDebug("Trying provider {Provider} for word '{WordText}' (WC ID: {WCId})",
-                                             agent.ApiProvider, wcRecord.WordText, wcRecord.Id);
-                            var explanationResult = await languageService.GetMarkdownExplanationAsync(wcRecord.WordText, NativeLanguage, LearnLanguage, agent.ApiBaseUrl, agent.ApiKey, agent.Models[0]);
+                                             agent.Provider, wcRecord.WordText, wcRecord.Id);
+                            var explanationResult = await languageService.GetMarkdownExplanationAsync(wcRecord.WordText, NativeLanguage, LearnLanguage, agent.BaseUrl, agent.ApiKey, agent.Models[0]);
 
                             if (explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
                             {
                                 successfulResult = explanationResult;
                                 usedAgent = agent;
                                 logger.LogInformation("Successfully got explanation from provider {Provider} for word '{WordText}' (WC ID: {WCId}) using model {ModelName}",
-                                                       agent.ApiProvider, wcRecord.WordText, wcRecord.Id, explanationResult.ModelName);
+                                                       agent.Provider, wcRecord.WordText, wcRecord.Id, explanationResult.ModelName);
                                 break;
                             }
 
@@ -194,12 +204,12 @@ public class LlmController(
                                 if (statusCode >= 400 && statusCode < 500)
                                 {
                                     logger.LogWarning("Marking provider {Provider} as unavailable due to HTTP {StatusCode} for word '{WordText}' (WC ID: {WCId}): {Error}",
-                                                       agent.ApiProvider, statusCode, wcRecord.WordText, wcRecord.Id, errorMsg);
-                                    unavailableProviders.Add(agent.ApiProvider);
+                                                       agent.Provider, statusCode, wcRecord.WordText, wcRecord.Id, errorMsg);
+                                    unavailableProviders.Add(agent.Provider);
                                 }
                             }
                             logger.LogWarning("Provider {Provider} failed for word '{WordText}' (WC ID: {WCId}): {Error}",
-                                               agent.ApiProvider, wcRecord.WordText, wcRecord.Id, errorMsg);
+                                               agent.Provider, wcRecord.WordText, wcRecord.Id, errorMsg);
                         }
 
                         if (successfulResult != null && usedAgent != null && !string.IsNullOrWhiteSpace(successfulResult.Markdown))
@@ -212,7 +222,7 @@ public class LlmController(
                                 ExplanationLanguage = NativeLanguage,
                                 MarkdownExplanation = successfulResult.Markdown,
                                 CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
-                                ProviderModelName = $"{usedAgent.ApiProvider}:{successfulResult.ModelName}"
+                                ProviderModelName = $"{usedAgent.Provider}:{successfulResult.ModelName}"
                             };
 
                             try

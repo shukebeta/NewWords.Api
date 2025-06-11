@@ -33,7 +33,7 @@ namespace LLM.Models
         /// <summary>
         /// Alternative translations or meanings in the target language, if any.
         /// </summary>
-        public List<string> AlternativeTranslations { get; set; } = new List<string>();
+        public List<string> AlternativeTranslations { get; set; } = new();
 
         /// <summary>
         /// A detailed explanation of the word or phrase in the target language.
@@ -43,12 +43,12 @@ namespace LLM.Models
         /// <summary>
         /// Example sentences in the original language with translations in the target language.
         /// </summary>
-        public List<ExampleSentence> ExampleSentences { get; set; } = new List<ExampleSentence>();
+        public List<ExampleSentence> ExampleSentences { get; set; } = new();
 
         /// <summary>
         /// Related vocabulary or terms with their meanings or translations.
         /// </summary>
-        public List<RelatedTerm> RelatedTerms { get; set; } = new List<RelatedTerm>();
+        public List<RelatedTerm> RelatedTerms { get; set; } = new();
     }
 
     /// <summary>

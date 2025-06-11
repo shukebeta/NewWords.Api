@@ -33,10 +33,10 @@ namespace LLM.Configuration
         /// </summary>
         public class AgentConfig // Made public to be accessible by TranslationAndExplanationService
         {
-            public string ApiProvider { get; set; } = string.Empty;
-            public string ApiBaseUrl { get; set; } = string.Empty;
+            public string Provider { get; set; } = string.Empty;
+            public string BaseUrl { get; set; } = string.Empty;
             public string ApiKey { get; set; } = string.Empty;
-            public List<string> Models { get; set; } = new List<string>();
+            public List<string> Models { get; set; } = new();
         }
     }
 }

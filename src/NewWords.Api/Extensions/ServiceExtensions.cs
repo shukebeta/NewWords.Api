@@ -22,8 +22,6 @@ public static class ServiceExtensions
         services.AddScoped<IUserWordRepository, UserWordRepository>();
         services.AddScoped<ILlmConfigurationRepository, LlmConfigurationRepository>();
         services.AddScoped<LLM.Configuration.LlmConfigurationService>();
-        services.AddScoped<LanguageRecognitionService>();
         services.AddScoped<ILanguageService, LanguageService>();
-        services.AddHttpClient<LanguageRecognitionService>();
     }
 }

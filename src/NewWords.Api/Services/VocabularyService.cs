@@ -124,7 +124,7 @@ namespace NewWords.Api.Services
                 var wordLanguageName = languageHelper.GetLanguageName(wordLanguage)!;
                 var explanationLanguageName = languageHelper.GetLanguageName(explanationLanguage)!;
                 var explanationResult =
-                    await languageService.GetMarkdownExplanationAsync(wordText, explanationLanguageName, wordLanguageName, agentConfig.ApiBaseUrl, agentConfig.ApiKey, agentConfig.Models[0]);
+                    await languageService.GetMarkdownExplanationAsync(wordText, explanationLanguageName, wordLanguageName, agentConfig.BaseUrl, agentConfig.ApiKey, agentConfig.Models[0]);
 
                 if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
                 {
