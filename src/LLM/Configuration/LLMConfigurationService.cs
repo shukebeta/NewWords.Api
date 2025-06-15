@@ -1,3 +1,4 @@
+using LLM.Models;
 using Microsoft.Extensions.Configuration;
 
 namespace LLM.Configuration
@@ -23,9 +24,15 @@ namespace LLM.Configuration
         /// Gets the list of configured agents.
         /// </summary>
         /// <returns>A list of AgentConfig objects.</returns>
-        public List<AgentConfig> GetAgentConfigs()
+        public List<Agent> GetAgentConfigs()
         {
-            return _agentConfigs;
+            return _agentConfigs.Select(a => a.Models.Select(m => new Agent()
+            {
+                Provider = a.Provider,
+                ModelName = m,
+                BaseUrl = a.BaseUrl,
+                ApiKey = a.ApiKey
+            })).SelectMany(x => x).ToList();
         }
 
         /// <summary>

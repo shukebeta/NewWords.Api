@@ -112,19 +112,17 @@ namespace NewWords.Api.Services
 
             if (explanation == null)
             {
-                var agentConfigs = llmConfigurationService.GetAgentConfigs();
-                if (agentConfigs == null || !agentConfigs.Any())
+                var agents = llmConfigurationService.GetAgentConfigs();
+                if (agents == null || !agents.Any())
                 {
                     logger.LogError("No LLM agents configured.");
                     throw new InvalidOperationException("No LLM agents configured. Cannot fetch word explanation.");
                 }
 
-                var agentConfig = agentConfigs.First();
-
                 var wordLanguageName = languageHelper.GetLanguageName(wordLanguage)!;
                 var explanationLanguageName = languageHelper.GetLanguageName(explanationLanguage)!;
                 var explanationResult =
-                    await languageService.GetMarkdownExplanationAsync(wordText, explanationLanguageName, wordLanguageName, agentConfig.BaseUrl, agentConfig.ApiKey, agentConfig.Models[0]);
+                    await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, wordLanguageName, agents);
 
                 if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
                 {

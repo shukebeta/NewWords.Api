@@ -3,13 +3,11 @@ namespace LLM;
 
 public interface ILanguageService
 {
-    Task<ExplanationResult> GetMarkdownExplanationAsync(
+    Task<ExplanationResult> GetMarkdownExplanationWithFallbackAsync(
         string inputText,
-        string nativeLanguage,
-        string targetLanguage,
-        string apiBaseUrl,
-        string apiKey,
-        string model);
+        string nativeLanguageName,
+        string targetLanguageName,
+        List<Agent> agents);
 
     /// <summary>
     /// Detects the language of the given text and returns LanguageDetectionResult that contains the language code along with the confidence level.
