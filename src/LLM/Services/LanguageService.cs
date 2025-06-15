@@ -8,7 +8,7 @@ namespace LLM.Services;
 /// <summary>
 /// Language Service, fully utilizing Flurl features
 /// </summary>
-public class LanguageService : ILanguageService
+public class LanguageService(IConfigurationService configurationService) : ILanguageService
 {
     /// <summary>
     /// Get Markdown formatted explanation using Flurl features
@@ -126,7 +126,7 @@ public class LanguageService : ILanguageService
                 {
                     IsSuccess = true,
                     Markdown = response.Choices[0].Message.Content.Trim(),
-                    ModelName = agent.ModelName
+                    ModelName = $"{agent.Provider}:{agent.ModelName}",
                 };
             }
 
@@ -154,14 +154,28 @@ public class LanguageService : ILanguageService
     public async Task<ExplanationResult> GetMarkdownExplanationWithFallbackAsync(
         string inputText,
         string nativeLanguage,
-        string targetLanguage,
-        List<Agent> agents)
+        string targetLanguage)
     {
         ExplanationResult result = new ExplanationResult();
-        foreach (var agent in agents)
+        foreach (var agent in configurationService.Agents)
         {
             result = await GetMarkdownExplanationAsync(inputText, nativeLanguage, targetLanguage, agent);
             if (result.IsSuccess)
+            {
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    public async Task<LanguageDetectionResult> GetDetectedLanguageWithFallbackAsync(string text)
+    {
+        LanguageDetectionResult result = new LanguageDetectionResult();
+        foreach (var agent in configurationService.Agents)
+        {
+            result = await GetDetectedLanguageAsync(text, agent);
+            if (result.IsSuccessful)
             {
                 return result;
             }
@@ -177,7 +191,7 @@ public class LanguageService : ILanguageService
     /// <param name="text">The input text to detect the language of.</param>
     /// <param name="agent">The Agent object containing configuration details.</param>
     /// <returns>A LanguageDetectionResult object containing the detected language and confidence.</returns>
-    public async Task<LanguageDetectionResult> GetDetectedLanguageAsync(string text, Agent agent)
+    private async Task<LanguageDetectionResult> GetDetectedLanguageAsync(string text, Agent agent)
     {
         // Validate input
         if (string.IsNullOrEmpty(text)) throw new ArgumentException("Text cannot be empty", nameof(text));
@@ -200,10 +214,11 @@ public class LanguageService : ILanguageService
                                             <requirements>
                                                 1. Return ONLY a valid JSON object with no additional formatting, explanations, or markdown
                                                 2. For Chinese text detection:
-                                                   - Use 'zh-CN' for Simplified Chinese
-                                                   - Use 'zh-TW' for Traditional Chinese
+                                                   - Use 'zh-CN' for 简体字
+                                                   - Use 'zh-TW' for 繁体字
                                                 3. Use standard ISO 639-1 codes for other languages (e.g., 'en', 'fr', 'es', 'de', 'ja', 'ko')
                                                 4. Confidence should be a decimal between 0.0 and 1.0
+                                                5. 请务必仔细检查是否繁体字，不要见了简体的"中华民国"也返回 zh-TW
                                             </requirements>
                                         </task>
                                         <exampleResponse>
@@ -212,7 +227,7 @@ public class LanguageService : ILanguageService
                                     </language_detection>
                                     """;
 
-        var userPrompt = $"Detect the language of this text: {text}";
+        var userPrompt = $"input text is: {text}";
 
         // Build the request body
         var requestData = new
@@ -242,14 +257,14 @@ public class LanguageService : ILanguageService
 
             if (jsonResponse != null)
             {
+                jsonResponse.IsSuccessful = true;
                 return jsonResponse;
             }
         }
  
         return new LanguageDetectionResult()
         {
-            LanguageCode = "unknown",
-            ConfidenceLevel = '1',
+            IsSuccessful = false,
         };
     }
 }

@@ -1,25 +1,23 @@
 using Api.Framework.Models;
-using Api.Framework.Extensions; // For ToUnixTimeSeconds
+using Api.Framework.Extensions;
 using NewWords.Api.Entities;
-using NewWords.Api.Repositories; // Added for repository interfaces
+using NewWords.Api.Repositories;
 using SqlSugar;
-// For LlmConfigurationService and AgentConfig
 using Api.Framework;
 using LLM;
+using LLM.Models;
 using LLM.Services;
-using NewWords.Api.Helpers; // Added for Task
 
 namespace NewWords.Api.Services
 {
     public class VocabularyService(
         ISqlSugarClient db,
         ILanguageService languageService,
-        LlmConfigurationService llmConfigurationService,
+        IConfigurationService configurationService,
         ILogger<VocabularyService> logger,
         IRepositoryBase<WordCollection> wordCollectionRepository,
         IRepositoryBase<WordExplanation> wordExplanationRepository,
-        IUserWordRepository userWordRepository,
-        LanguageHelper languageHelper)
+        IUserWordRepository userWordRepository)
         : IVocabularyService
     {
         // Handles WordExplanation entities
@@ -27,7 +25,6 @@ namespace NewWords.Api.Services
         public async Task<PageData<WordExplanation>> GetUserWordsAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
-            // Using _db directly for complex query; repositories are for simpler CRUD in this context.
             var pagedWords = await db.Queryable<WordExplanation>()
                 .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
                 .Where((we,uw) => uw.UserId == userId)
@@ -47,16 +44,16 @@ namespace NewWords.Api.Services
             };
         }
 
-        public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string wordLanguage, string explanationLanguage)
+        public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string wordLanguageCode, string explanationLanguageCode)
         {
             try
             {
                 await db.AsTenant().BeginTranAsync();
                 // 1. Handle WordCollection
-                var wordCollectionId = await _HandleWordCollection(wordText, wordLanguage);
+                var (wordCollectionId, srcLanguageCode) = await _HandleWordCollection(wordText, wordLanguageCode);
 
                 // 2. Handle WordExplanation (Explanation Cache)
-                var explanation = await _HandleExplanation(wordText, wordLanguage, explanationLanguage, wordCollectionId);
+                var explanation = await _HandleExplanation(wordText, srcLanguageCode, explanationLanguageCode, wordCollectionId);
 
                 // 3. Handle UserWord
                 await _HandleUserWord(userId, explanation);
@@ -105,85 +102,103 @@ namespace NewWords.Api.Services
             }
         }
 
-        private async Task<WordExplanation> _HandleExplanation(string wordText, string wordLanguage, string explanationLanguage,
+        private async Task<WordExplanation> _HandleExplanation(string wordText, string wordLanguageCode, string explanationLanguageCode,
             long wordCollectionId)
         {
             var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
-                we.WordCollectionId == wordCollectionId && we.ExplanationLanguage == explanationLanguage);
+                we.WordCollectionId == wordCollectionId && we.ExplanationLanguage == explanationLanguageCode);
 
-            if (explanation == null)
+            if (explanation is not null) return explanation;
+            var wordLanguageName = configurationService.GetLanguageName(wordLanguageCode)!;
+            var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
+            var explanationResult =
+                await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, wordLanguageName);
+
+            if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
             {
-                var agents = llmConfigurationService.GetAgentConfigs();
-                if (agents == null || !agents.Any())
-                {
-                    logger.LogError("No LLM agents configured.");
-                    throw new InvalidOperationException("No LLM agents configured. Cannot fetch word explanation.");
-                }
-
-                var wordLanguageName = languageHelper.GetLanguageName(wordLanguage)!;
-                var explanationLanguageName = languageHelper.GetLanguageName(explanationLanguage)!;
-                var explanationResult =
-                    await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, wordLanguageName, agents);
-
-                if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
-                {
-                    logger.LogError(
-                        $"Failed to get explanation from AI for word '{wordText}': {explanationResult.ErrorMessage}");
-                    throw new Exception(
-                        $"Failed to get explanation from AI: {explanationResult.ErrorMessage ?? "AI returned empty markdown."}");
-                }
-
-                var newExplanation = new WordExplanation
-                {
-                    WordCollectionId = wordCollectionId,
-                    WordText = wordText,
-                    WordLanguage = wordLanguage,
-                    ExplanationLanguage = explanationLanguage,
-                    MarkdownExplanation = explanationResult.Markdown,
-                    ProviderModelName = explanationResult.ModelName,
-                    CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
-                };
-                var newExplanationId = await wordExplanationRepository.InsertReturnIdentityAsync(newExplanation);
-                newExplanation.Id = newExplanationId; // Assign the returned ID to the entity's Id property
-                explanation = newExplanation;
+                logger.LogError(
+                    $"Failed to get explanation from AI for word '{wordText}': {explanationResult.ErrorMessage}");
+                throw new Exception(
+                    $"Failed to get explanation from AI: {explanationResult.ErrorMessage ?? "AI returned empty markdown."}");
             }
+
+            var newExplanation = new WordExplanation
+            {
+                WordCollectionId = wordCollectionId,
+                WordText = wordText,
+                WordLanguage = wordLanguageCode,
+                ExplanationLanguage = explanationLanguageCode,
+                MarkdownExplanation = explanationResult.Markdown,
+                ProviderModelName = explanationResult.ModelName,
+                CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
+            };
+            var newExplanationId = await wordExplanationRepository.InsertReturnIdentityAsync(newExplanation);
+            newExplanation.Id = newExplanationId; // Assign the returned ID to the entity's Id property
+            explanation = newExplanation;
 
             return explanation;
         }
 
-        private async Task<long> _HandleWordCollection(string wordText, string wordLanguageCode)
+        private async Task<(long wordCollectionId, string wordLanguageCode)> _HandleWordCollection(string wordText, string wordLanguageCode)
         {
-            var wordInCollections = await wordCollectionRepository.GetListAsync(wc =>
-                wc.WordText == wordText.Trim());
-            long wordCollectionId;
-            long currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
+            var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
+            wordText = wordText.Trim();
+            var existingWords = await wordCollectionRepository.GetListAsync(wc =>
+                wc.WordText == wordText);
 
-            if (wordInCollections.Count > 0)
+            LanguageDetectionResult detectedLanguageResult;
+            if (existingWords.Count == 0)
             {
-                var wordInCollection = wordInCollections.FirstOrDefault(wc => wc.Language == wordLanguageCode);
-                if (wordInCollection is null)
+                detectedLanguageResult = await languageService.GetDetectedLanguageWithFallbackAsync(wordText);
+                if (detectedLanguageResult.IsSuccessful)
                 {
-                    var detectedLanguageResult = await languageService.GetDetectedLanguageAsync(wordText, )
+                    wordLanguageCode = detectedLanguageResult.LanguageCode;
                 }
-                wordInCollection.QueryCount++;
-                wordInCollection.UpdatedAt = currentTime;
-                await wordCollectionRepository.UpdateAsync(wordInCollection);
-                wordCollectionId = wordInCollection.Id;
+                return (await _AddWordCollection(wordText, wordLanguageCode, currentTime), wordLanguageCode);
             }
-            else
+ 
+            var matchedWord = existingWords.FirstOrDefault(wc => wc.Language == wordLanguageCode);
+            if (matchedWord is null)
             {
-                var newCollectionWord = new WordCollection
+                detectedLanguageResult = await languageService.GetDetectedLanguageWithFallbackAsync(wordText);
+                // when language detection call fails,
+                if (!detectedLanguageResult.IsSuccessful)
                 {
-                    WordText = wordText,
-                    Language = wordLanguageCode,
-                    QueryCount = 1,
-                    CreatedAt = currentTime,
-                    UpdatedAt = currentTime
-                };
-                wordCollectionId = await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
+                    var word = existingWords.First();
+                    return (word.Id, word.Language);
+                }
+                // input language code is correct but no record found, create one
+                var detectedCode = detectedLanguageResult.LanguageCode;
+                if (detectedCode == wordLanguageCode)
+                {
+                    return (await _AddWordCollection(wordText, detectedCode, currentTime), wordLanguageCode);
+                }
+                // check another time
+                matchedWord = existingWords.FirstOrDefault( w => w.Language.Equals(detectedCode));
+                if (matchedWord is not null)
+                {
+                    return (matchedWord.Id, matchedWord.Language);
+                }
+                // new language code found: input language code is incorrect and no record found, create one
+                return (await _AddWordCollection(wordText, detectedCode, currentTime), detectedCode);
             }
+            matchedWord.QueryCount++;
+            matchedWord.UpdatedAt = currentTime;
+            await wordCollectionRepository.UpdateAsync(matchedWord);
+            return (matchedWord.Id, matchedWord.Language);
+        }
 
-            return wordCollectionId;
+        private async Task<long> _AddWordCollection(string wordText, string wordLanguageCode, long currentTime)
+        {
+            var newCollectionWord = new WordCollection
+            {
+                WordText = wordText,
+                Language = wordLanguageCode,
+                QueryCount = 1,
+                CreatedAt = currentTime,
+                UpdatedAt = currentTime
+            };
+            return await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
         }
     }
 }

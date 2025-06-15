@@ -29,8 +29,6 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(SetupSwaggerGen());
-builder.Services.AddScoped(typeof(IRepositoryBase<>), typeof(RepositoryBase<>));
-builder.Services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
 
 // Configure SQLSugar
 builder.Services.AddSqlSugarSetup(builder.Configuration.GetSection("DatabaseConnectionOptions").Get<DatabaseConnectionOptions>()!, logger);

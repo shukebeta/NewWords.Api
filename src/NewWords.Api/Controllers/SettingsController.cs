@@ -7,6 +7,8 @@ using NewWords.Api.Entities;
 using NewWords.Api.Services.interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Api.Framework.Helper;
+using LLM;
+using LLM.Models;
 using Microsoft.AspNetCore.Authorization;
 
 namespace NewWords.Api.Controllers;
@@ -16,7 +18,7 @@ public class SettingsController(
     IMapper mapper,
     ICurrentUser currentUser,
     IRepositoryBase<UserSettings> userSettingsRepository,
-    IConfiguration configuration)
+    IConfigurationService configurationService)
     : BaseController
 {
     [HttpGet]
@@ -94,9 +96,8 @@ public class SettingsController(
 
     [HttpGet]
     [AllowAnonymous]
-    public ApiResult<List<LanguageDto>> Languages()
+    public ApiResult<List<Language>> Languages()
     {
-        var languages = configuration.GetSection("SupportedLanguages").Get<List<LanguageDto>>();
-        return new SuccessfulResult<List<LanguageDto>>(languages ?? []);
+        return new SuccessfulResult<List<Language>>(configurationService.SupportedLanguages);
     }
 }

@@ -6,8 +6,7 @@ public interface ILanguageService
     Task<ExplanationResult> GetMarkdownExplanationWithFallbackAsync(
         string inputText,
         string nativeLanguageName,
-        string targetLanguageName,
-        List<Agent> agents);
+        string targetLanguageName);
 
     /// <summary>
     /// Detects the language of the given text and returns LanguageDetectionResult that contains the language code along with the confidence level.
@@ -17,7 +16,6 @@ public interface ILanguageService
     /// The confidence level is a decimal value between 0 and 1, indicating how confident the service is about the detected language.
     /// </summary>
     /// <param name="text"></param>
-    /// <param name="agent"></param>
     /// <returns></returns>
-    Task<LanguageDetectionResult> GetDetectedLanguageAsync(string text, Agent agent);
+    Task<LanguageDetectionResult> GetDetectedLanguageWithFallbackAsync(string text);
 }

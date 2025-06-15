@@ -1,3 +1,4 @@
+using Api.Framework;
 using LLM;
 using LLM.Services;
 using NewWords.Api.Helpers;
@@ -12,16 +13,16 @@ public static class ServiceExtensions
     public static void RegisterServices(this IServiceCollection services)
     {
         // Register Application Services
-        services.AddSingleton<LanguageHelper>();
+        services.AddSingleton(typeof(IRepositoryBase<>), typeof(RepositoryBase<>));
+        services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+        services.AddSingleton<IConfigurationService, ConfigurationService>();
+        services.AddSingleton<ILanguageService, LanguageService>();
+        services.AddSingleton<IQueryHistoryService, QueryHistoryService>();
+        services.AddSingleton<IUserWordRepository, UserWordRepository>();
+        services.AddSingleton<IUserRepository, UserRepository>();
+        services.AddSingleton<IUserService, UserService>();
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<IAuthService, AuthService>();
-        services.AddScoped<IUserService, UserService>();
-        services.AddScoped<IVocabularyService, VocabularyService>();
-        services.AddScoped<IQueryHistoryService, QueryHistoryService>();
-        services.AddScoped<IUserRepository, UserRepository>();
-        services.AddScoped<IUserWordRepository, UserWordRepository>();
-        services.AddScoped<ILlmConfigurationRepository, LlmConfigurationRepository>();
-        services.AddScoped<LLM.Configuration.LlmConfigurationService>();
-        services.AddScoped<ILanguageService, LanguageService>();
+        services.AddSingleton<IVocabularyService, VocabularyService>();
     }
 }
