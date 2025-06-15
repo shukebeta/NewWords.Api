@@ -3,9 +3,10 @@ using Api.Framework.Extensions; // For ToUnixTimeSeconds
 using NewWords.Api.Entities;
 using NewWords.Api.Repositories; // Added for repository interfaces
 using SqlSugar;
-using LLM.Configuration; // For LlmConfigurationService and AgentConfig
+// For LlmConfigurationService and AgentConfig
 using Api.Framework;
 using LLM;
+using LLM.Services;
 using NewWords.Api.Helpers; // Added for Task
 
 namespace NewWords.Api.Services
@@ -150,15 +151,20 @@ namespace NewWords.Api.Services
             return explanation;
         }
 
-        private async Task<long> _HandleWordCollection(string wordText, string wordLanguage)
+        private async Task<long> _HandleWordCollection(string wordText, string wordLanguageCode)
         {
-            var wordInCollection = await wordCollectionRepository.GetFirstOrDefaultAsync(wc =>
-                wc.WordText == wordText.Trim() && wc.Language == wordLanguage && wc.DeletedAt == null);
+            var wordInCollections = await wordCollectionRepository.GetListAsync(wc =>
+                wc.WordText == wordText.Trim());
             long wordCollectionId;
             long currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
 
-            if (wordInCollection != null)
+            if (wordInCollections.Count > 0)
             {
+                var wordInCollection = wordInCollections.FirstOrDefault(wc => wc.Language == wordLanguageCode);
+                if (wordInCollection is null)
+                {
+                    var detectedLanguageResult = await languageService.GetDetectedLanguageAsync(wordText, )
+                }
                 wordInCollection.QueryCount++;
                 wordInCollection.UpdatedAt = currentTime;
                 await wordCollectionRepository.UpdateAsync(wordInCollection);
@@ -169,7 +175,7 @@ namespace NewWords.Api.Services
                 var newCollectionWord = new WordCollection
                 {
                     WordText = wordText,
-                    Language = wordLanguage,
+                    Language = wordLanguageCode,
                     QueryCount = 1,
                     CreatedAt = currentTime,
                     UpdatedAt = currentTime

@@ -5,7 +5,6 @@ using LLM.Models;
 using Microsoft.AspNetCore.Authorization;
 using SqlSugar;
 using NewWords.Api.Entities;
-using LLM.Configuration;
 using Api.Framework.Extensions;
 using LLM;
 using NewWords.Api.Services.interfaces;
