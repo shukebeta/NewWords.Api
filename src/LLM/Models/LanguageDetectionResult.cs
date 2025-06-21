@@ -8,4 +8,5 @@ public class LanguageDetectionResult
     public string LanguageCode { get; set; } = string.Empty;
     public decimal ConfidenceLevel { get; set; }
     public bool IsSuccessful { get; set; }
+    public string? ErrorMessage { get; set; }
 }

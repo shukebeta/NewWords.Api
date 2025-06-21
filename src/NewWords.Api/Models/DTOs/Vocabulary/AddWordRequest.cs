@@ -10,7 +10,7 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
 
         [Required]
         [StringLength(20)]
-        public string WordLanguage { get; set; } = string.Empty; // Language of the word itself (e.g., "en")
+        public string LearningLanguage { get; set; } = string.Empty; // User's learning language (e.g., "en")
 
         [Required]
         [StringLength(20)]

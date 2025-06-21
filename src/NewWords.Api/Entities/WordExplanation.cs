@@ -29,10 +29,10 @@ namespace NewWords.Api.Entities
         public string WordText { get; set; } = string.Empty;
 
         /// <summary>
-        /// The language code of the word itself (e.g., "en", "zh"). Denormalized from WordCollection. Required.
+        /// The user's learning language code (e.g., "en", "zh"). Required.
         /// </summary>
         [SugarColumn(IsNullable = false, Length = 20)]
-        public string WordLanguage { get; set; } = string.Empty;
+        public string LearningLanguage { get; set; } = string.Empty;
 
         /// <summary>
         /// The language code this explanation is tailored for (e.g., "zh-CN", "en-US"). Required.

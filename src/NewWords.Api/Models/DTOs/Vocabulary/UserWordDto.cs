@@ -24,9 +24,9 @@ namespace NewWords.Api.Models.DTOs.Vocabulary
         public string WordText { get; set; } = string.Empty;
 
         /// <summary>
-        /// The language code of the word itself (e.g., "en", "zh").
+        /// The user's learning language code (e.g., "en", "zh").
         /// </summary>
-        public string WordLanguage { get; set; } = string.Empty;
+        public string LearningLanguage { get; set; } = string.Empty;
 
         /// <summary>
         /// The native language code the explanation is tailored for.

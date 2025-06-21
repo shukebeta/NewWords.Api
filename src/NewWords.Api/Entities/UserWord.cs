@@ -54,6 +54,6 @@ namespace NewWords.Api.Entities
         /// Navigation property back to the Word explanation. Ignored by SqlSugar for mapping.
         /// </summary>
         [SugarColumn(IsIgnore = true)]
-        public Word? Word { get; set; }
+        public WordExplanation? WordExplanation { get; set; }
     }
 }

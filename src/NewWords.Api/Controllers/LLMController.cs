@@ -17,7 +17,7 @@ namespace NewWords.Api.Controllers;
 [Authorize]
 public class LlmController(
     ILanguageService languageService,
-    ConfigurationService configService,
+    IConfigurationService configService,
     ISqlSugarClient dbClient,
     ILogger<LlmController> logger)
     : BaseController
@@ -79,7 +79,7 @@ public class LlmController(
 
         try
         {
-            logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, SourceWordLanguage: {SourceLang}",
+            logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, LearningLanguage: {LearnLang}",
                 NativeLanguage, LearnLanguage);
 
             long currentLastId = 0; // Start from the beginning of WordCollection
@@ -147,7 +147,7 @@ public class LlmController(
                             {
                                 WordCollectionId = wcRecord.Id,
                                 WordText = wcRecord.WordText, // Denormalized
-                                WordLanguage = wcRecord.Language, // Denormalized (should be SOURCE_WORD_LANGUAGE)
+                                LearningLanguage = LearnLanguage, // User's learning language
                                 ExplanationLanguage = NativeLanguage,
                                 MarkdownExplanation = explanationResult.Markdown,
                                 CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),

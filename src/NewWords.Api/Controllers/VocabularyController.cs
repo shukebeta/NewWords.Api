@@ -47,7 +47,7 @@ namespace NewWords.Api.Controllers
             var addedWordExplanation = await vocabularyService.AddUserWordAsync(
                 userId,
                 addWordRequest.WordText,
-                addWordRequest.WordLanguage,
+                addWordRequest.LearningLanguage,
                 addWordRequest.ExplanationLanguage
             );
 

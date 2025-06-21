@@ -44,16 +44,16 @@ namespace NewWords.Api.Services
             };
         }
 
-        public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string wordLanguageCode, string explanationLanguageCode)
+        public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string learningLanguageCode, string explanationLanguageCode)
         {
             try
             {
                 await db.AsTenant().BeginTranAsync();
                 // 1. Handle WordCollection
-                var (wordCollectionId, srcLanguageCode) = await _HandleWordCollection(wordText, wordLanguageCode);
+                var (wordCollectionId, srcLanguageCode) = await _HandleWordCollection(wordText, learningLanguageCode);
 
                 // 2. Handle WordExplanation (Explanation Cache)
-                var explanation = await _HandleExplanation(wordText, srcLanguageCode, explanationLanguageCode, wordCollectionId);
+                var explanation = await _HandleExplanation(wordText, learningLanguageCode, explanationLanguageCode, wordCollectionId);
 
                 // 3. Handle UserWord
                 await _HandleUserWord(userId, explanation);
@@ -102,17 +102,19 @@ namespace NewWords.Api.Services
             }
         }
 
-        private async Task<WordExplanation> _HandleExplanation(string wordText, string wordLanguageCode, string explanationLanguageCode,
+        private async Task<WordExplanation> _HandleExplanation(string wordText, string learningLanguageCode, string explanationLanguageCode,
             long wordCollectionId)
         {
             var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
-                we.WordCollectionId == wordCollectionId && we.ExplanationLanguage == explanationLanguageCode);
+                we.WordCollectionId == wordCollectionId && 
+                we.LearningLanguage == learningLanguageCode && 
+                we.ExplanationLanguage == explanationLanguageCode);
 
             if (explanation is not null) return explanation;
-            var wordLanguageName = configurationService.GetLanguageName(wordLanguageCode)!;
+            var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
             var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
             var explanationResult =
-                await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, wordLanguageName);
+                await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, learningLanguageName);
 
             if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
             {
@@ -126,7 +128,7 @@ namespace NewWords.Api.Services
             {
                 WordCollectionId = wordCollectionId,
                 WordText = wordText,
-                WordLanguage = wordLanguageCode,
+                LearningLanguage = learningLanguageCode,
                 ExplanationLanguage = explanationLanguageCode,
                 MarkdownExplanation = explanationResult.Markdown,
                 ProviderModelName = explanationResult.ModelName,
