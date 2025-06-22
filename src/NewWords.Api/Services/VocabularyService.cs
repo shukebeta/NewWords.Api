@@ -50,7 +50,7 @@ namespace NewWords.Api.Services
             {
                 await db.AsTenant().BeginTranAsync();
                 // 1. Handle WordCollection
-                var (wordCollectionId, srcLanguageCode) = await _HandleWordCollection(wordText, learningLanguageCode);
+                var wordCollectionId = await _HandleWordCollection(wordText);
 
                 // 2. Handle WordExplanation (Explanation Cache)
                 var explanation = await _HandleExplanation(wordText, learningLanguageCode, explanationLanguageCode, wordCollectionId);
@@ -141,61 +141,33 @@ namespace NewWords.Api.Services
             return explanation;
         }
 
-        private async Task<(long wordCollectionId, string wordLanguageCode)> _HandleWordCollection(string wordText, string wordLanguageCode)
+        private async Task<long> _HandleWordCollection(string wordText)
         {
             var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
             wordText = wordText.Trim();
-            var existingWords = await wordCollectionRepository.GetListAsync(wc =>
+            
+            // Try to find existing word (language-agnostic)
+            var existingWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc =>
                 wc.WordText == wordText);
 
-            LanguageDetectionResult detectedLanguageResult;
-            if (existingWords.Count == 0)
+            if (existingWord == null)
             {
-                detectedLanguageResult = await languageService.GetDetectedLanguageWithFallbackAsync(wordText);
-                if (detectedLanguageResult.IsSuccessful)
-                {
-                    wordLanguageCode = detectedLanguageResult.LanguageCode;
-                }
-                return (await _AddWordCollection(wordText, wordLanguageCode, currentTime), wordLanguageCode);
+                // Create new word record
+                return await _AddWordCollection(wordText, currentTime);
             }
- 
-            var matchedWord = existingWords.FirstOrDefault(wc => wc.Language == wordLanguageCode);
-            if (matchedWord is null)
-            {
-                detectedLanguageResult = await languageService.GetDetectedLanguageWithFallbackAsync(wordText);
-                // when language detection call fails,
-                if (!detectedLanguageResult.IsSuccessful)
-                {
-                    var word = existingWords.First();
-                    return (word.Id, word.Language);
-                }
-                // input language code is correct but no record found, create one
-                var detectedCode = detectedLanguageResult.LanguageCode;
-                if (detectedCode == wordLanguageCode)
-                {
-                    return (await _AddWordCollection(wordText, detectedCode, currentTime), wordLanguageCode);
-                }
-                // check another time
-                matchedWord = existingWords.FirstOrDefault( w => w.Language.Equals(detectedCode));
-                if (matchedWord is not null)
-                {
-                    return (matchedWord.Id, matchedWord.Language);
-                }
-                // new language code found: input language code is incorrect and no record found, create one
-                return (await _AddWordCollection(wordText, detectedCode, currentTime), detectedCode);
-            }
-            matchedWord.QueryCount++;
-            matchedWord.UpdatedAt = currentTime;
-            await wordCollectionRepository.UpdateAsync(matchedWord);
-            return (matchedWord.Id, matchedWord.Language);
+            
+            // Update existing word
+            existingWord.QueryCount++;
+            existingWord.UpdatedAt = currentTime;
+            await wordCollectionRepository.UpdateAsync(existingWord);
+            return existingWord.Id;
         }
 
-        private async Task<long> _AddWordCollection(string wordText, string wordLanguageCode, long currentTime)
+        private async Task<long> _AddWordCollection(string wordText, long currentTime)
         {
             var newCollectionWord = new WordCollection
             {
                 WordText = wordText,
-                Language = wordLanguageCode,
                 QueryCount = 1,
                 CreatedAt = currentTime,
                 UpdatedAt = currentTime

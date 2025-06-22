@@ -3,10 +3,10 @@ using SqlSugar;
 namespace NewWords.Api.Entities
 {
     /// <summary>
-    /// Represents a word in the global collection.
+    /// Represents a word in the global collection, language-agnostic.
     /// </summary>
     [SugarTable("WordCollection")]
-    [SugarIndex("UQ_WordCollection_WordText_Language", nameof(WordText), OrderByType.Asc, nameof(Language), OrderByType.Asc, true)] // Assuming WordText + Language should be unique
+    [SugarIndex("UQ_WordCollection_WordText", nameof(WordText), OrderByType.Asc, true)] // WordText should be unique
     public class WordCollection
     {
         /// <summary>
@@ -16,16 +16,10 @@ namespace NewWords.Api.Entities
         public long Id { get; set; }
 
         /// <summary>
-        /// The actual word text.
+        /// The actual word text (language-agnostic).
         /// </summary>
         [SugarColumn(IsNullable = false, Length = 255)]
         public string WordText { get; set; } = string.Empty;
-
-        /// <summary>
-        /// The language code of the word.
-        /// </summary>
-        [SugarColumn(IsNullable = false, Length = 20)]
-        public string Language { get; set; } = string.Empty;
 
         /// <summary>
         /// How many times this word has been queried or added by users.

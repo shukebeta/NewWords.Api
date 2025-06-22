@@ -68,15 +68,13 @@ public class LlmController(
     [ProducesResponseType(typeof(FailedResult), 500)]
     public async Task<ApiResult> FillWordExplanationsTable()
     {
-        const string NativeLanguage = "zh-CN"; // Example: Target language for explanations
-        const string LearnLanguage = "en";      // Example: Process only English words from WordCollection
+        const string NativeLanguage = "zh-CN"; // Target language for explanations
+        const string LearnLanguage = "en";      // User's learning language
         const int BATCH_SIZE = 50;
 
         long totalProcessed = 0;
         long successfullyAdded = 0;
         long skippedExisting = 0;
-        long skippedWrongLanguage = 0;
-
         try
         {
             logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, LearningLanguage: {LearnLang}",
@@ -87,20 +85,20 @@ public class LlmController(
 
             do
             {
-                // Fetch words from WordCollection where Language matches SOURCE_WORD_LANGUAGE
+                // Fetch words from WordCollection (language-agnostic)
                 wordCollectionBatch = await dbClient.Queryable<WordCollection>()
-                                           .Where(wc => wc.Id > currentLastId && wc.Language == LearnLanguage && wc.DeletedAt == null)
+                                           .Where(wc => wc.Id > currentLastId && wc.DeletedAt == null)
                                            .OrderBy(wc => wc.Id)
                                            .Take(BATCH_SIZE)
                                            .ToListAsync();
 
-                logger.LogDebug("Fetched {Count} words from WordCollection (Language: {SourceLang}) starting after ID {LastId}",
-                                 wordCollectionBatch.Count, LearnLanguage, currentLastId);
+                logger.LogDebug("Fetched {Count} words from WordCollection starting after ID {LastId}",
+                                 wordCollectionBatch.Count, currentLastId);
 
                 if (!wordCollectionBatch.Any())
                 {
-                    logger.LogInformation("No more words found in WordCollection for language {SourceLang} after ID {LastId}. Ending process.",
-                                           LearnLanguage, currentLastId);
+                    logger.LogInformation("No more words found in WordCollection after ID {LastId}. Ending process.",
+                                           currentLastId);
                     break;
                 }
 
@@ -127,14 +125,6 @@ public class LlmController(
                         continue;
                     }
 
-                    // This check is now part of the initial query, but kept for safety / clarity if query changes
-                    if (wcRecord.Language != LearnLanguage)
-                    {
-                        skippedWrongLanguage++;
-                         logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Language '{ActualLang}' does not match target '{TargetSourceLang}'.",
-                                         wcRecord.Id, wcRecord.WordText, wcRecord.Language, LearnLanguage);
-                        continue;
-                    }
 
                     try
                     {
@@ -191,14 +181,13 @@ public class LlmController(
                 }
             } while (wordCollectionBatch.Any());
 
-            logger.LogInformation("FillWordExplanationsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}, Skipped (Existing): {SkippedExisting}, Skipped (Wrong Lang): {SkippedWrongLang}",
-                                 totalProcessed, successfullyAdded, skippedExisting, skippedWrongLanguage);
+            logger.LogInformation("FillWordExplanationsTable process finished. Total Processed: {TotalProcessed}, Successfully Added: {SuccessfullyAdded}, Skipped (Existing): {SkippedExisting}",
+                                 totalProcessed, successfullyAdded, skippedExisting);
             return new SuccessfulResult<object>(new
             {
                 TotalProcessed = totalProcessed,
                 SuccessfullyAdded = successfullyAdded,
-                SkippedExistingExplanation = skippedExisting,
-                SkippedWrongSourceLanguage = skippedWrongLanguage
+                SkippedExistingExplanation = skippedExisting
             });
         }
         catch (Exception ex)
