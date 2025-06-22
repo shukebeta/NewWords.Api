@@ -24,5 +24,7 @@ public static class ServiceExtensions
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<IVocabularyService, VocabularyService>();
+        services.AddSingleton<IStoryService, StoryService>();
+        services.AddHostedService<StoryGenerationBackgroundService>();
     }
 }

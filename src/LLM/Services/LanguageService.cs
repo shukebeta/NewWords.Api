@@ -198,6 +198,165 @@ public class LanguageService(IConfigurationService configurationService) : ILang
         return result;
     }
 
+    /// <summary>
+    /// Attempt to generate story using multiple models, trying in sequence until successful
+    /// </summary>
+    public async Task<StoryResult> GetStoryWithFallbackAsync(string words, string languageName)
+    {
+        StoryResult result = new StoryResult();
+        foreach (var agent in configurationService.Agents)
+        {
+            result = await GetStoryAsync(words, languageName, agent);
+            if (result.IsSuccess)
+            {
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Generate story using a specific agent
+    /// </summary>
+    /// <param name="words">Comma-separated list of vocabulary words</param>
+    /// <param name="languageName">Language to write the story in</param>
+    /// <param name="agent">Agent configuration</param>
+    /// <returns>Story generation result</returns>
+    private async Task<StoryResult> GetStoryAsync(string words, string languageName, Agent agent)
+    {
+        // Validate input
+        if (string.IsNullOrEmpty(words))
+            throw new ArgumentException("Words cannot be empty", nameof(words));
+        if (string.IsNullOrEmpty(languageName))
+            throw new ArgumentException("Language name cannot be empty", nameof(languageName));
+        if (string.IsNullOrEmpty(agent.BaseUrl) || string.IsNullOrEmpty(agent.ApiKey) || string.IsNullOrEmpty(agent.ModelName))
+            throw new ArgumentException("At least one of the Agent data is null", nameof(agent));
+
+        try
+        {
+            // Build the complete API endpoint
+            var apiUrl = agent.BaseUrl.TrimEnd('/') + "/chat/completions";
+
+            // Build the story generation prompt
+            var userPrompt = $"Generate a story using these words: {words}";
+            var systemPrompt = $"""
+                                <story_generator_prompt>
+                                    <role>
+                                        <description>You are a creative story writer who specializes in creating engaging, simple stories that help language learners understand vocabulary words in context.</description>
+                                        <task>Write a coherent, interesting story in {languageName} that naturally incorporates the specified vocabulary words.</task>
+                                    </role>
+                                    
+                                    <requirements>
+                                        <length>Write approximately 100-150 words</length>
+                                        <vocabulary>Use basic, simple vocabulary except for the specified words that should be incorporated</vocabulary>
+                                        <formatting>**Bold the specified vocabulary words** using markdown syntax (**word**)</formatting>
+                                        <context>Make sure the vocabulary words are used in meaningful contexts so readers can understand their meaning from the story</context>
+                                        <engagement>Make the story interesting and engaging to read</engagement>
+                                        <coherence>Ensure the story flows naturally and makes logical sense</coherence>
+                                    </requirements>
+                                    
+                                    <format_requirements>
+                                        <structure>Simple narrative structure with clear beginning, middle, and end</structure>
+                                        <formatting>
+                                            <requirement>Use markdown formatting for bold vocabulary words</requirement>
+                                            <requirement>Write in clear, simple sentences</requirement>
+                                            <requirement>Do not use code blocks, output plain markdown content</requirement>
+                                            <requirement>Do not include any introductory or concluding meta-text</requirement>
+                                        </formatting>
+                                    </format_requirements>
+                                    
+                                    <example>
+                                        When using words like "adventure, mountain, discover":
+                                        
+                                        Sarah packed her backpack for the big **adventure**. She had always dreamed of climbing the tall **mountain** that stood behind her village. Early in the morning, she started walking up the rocky path. Hours later, she reached the top and could **discover** a beautiful hidden valley below. The view was so amazing that she knew this **adventure** would stay in her memory forever.
+                                    </example>
+                                    
+                                    <important_reminders>
+                                        1. Write ONLY the story content, no additional explanations
+                                        2. Bold ALL specified vocabulary words using **word** syntax
+                                        3. Keep the language level appropriate for learners
+                                        4. Ensure the story is complete and engaging
+                                    </important_reminders>
+                                </story_generator_prompt>
+                                """;
+
+            // Build the request body
+            var requestData = new
+            {
+                model = agent.ModelName,
+                messages = new[]
+                {
+                    new {role = "system", content = systemPrompt},
+                    new {role = "user", content = userPrompt}
+                },
+                temperature = 0.7f, // Higher temperature for more creative stories
+            };
+
+            // Use Flurl's fluent API to send request with proper error handling
+            var response = await apiUrl
+                .WithHeader("Authorization", $"Bearer {agent.ApiKey}")
+                .WithTimeout(TimeSpan.FromSeconds(30))
+                .AllowHttpStatus("4xx,5xx")
+                .PostJsonAsync(requestData);
+
+            if (!response.ResponseMessage.IsSuccessStatusCode)
+            {
+                var errorContent = await response.GetStringAsync();
+                return new StoryResult
+                {
+                    IsSuccess = false,
+                    ModelName = agent.ModelName,
+                    HttpStatusCode = (int)response.ResponseMessage.StatusCode,
+                    ErrorMessage = $"HTTP {response.ResponseMessage.StatusCode}: {errorContent}"
+                };
+            }
+
+            var apiResponse = await response.GetJsonAsync<ApiCompletionResponse>();
+
+            // Parse the response with better validation
+            if (apiResponse?.Choices == null || apiResponse.Choices.Length == 0)
+            {
+                var fullResponse = JsonSerializer.Serialize(apiResponse);
+                return new StoryResult
+                {
+                    IsSuccess = false,
+                    ModelName = agent.ModelName,
+                    ErrorMessage = $"API response contains no choices. Full response: {fullResponse}"
+                };
+            }
+
+            var firstChoice = apiResponse.Choices[0];
+            var content = firstChoice.Message?.Content?.Trim();
+
+            if (string.IsNullOrEmpty(content))
+            {
+                return new StoryResult
+                {
+                    IsSuccess = false,
+                    ModelName = agent.ModelName,
+                    ErrorMessage = "API returned empty content"
+                };
+            }
+
+            return new StoryResult
+            {
+                IsSuccess = true,
+                Content = content,
+                ModelName = agent.ModelName
+            };
+        }
+        catch (Exception ex)
+        {
+            return new StoryResult
+            {
+                IsSuccess = false,
+                ModelName = agent.ModelName,
+                ErrorMessage = $"Exception during API call: {ex.Message}"
+            };
+        }
+    }
+
     public async Task<LanguageDetectionResult> GetDetectedLanguageWithFallbackAsync(string text)
     {
         LanguageDetectionResult result = new LanguageDetectionResult();
