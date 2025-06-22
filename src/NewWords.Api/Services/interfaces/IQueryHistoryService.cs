@@ -1,4 +1,4 @@
-namespace NewWords.Api.Services;
+namespace NewWords.Api.Services.interfaces;
 
 public interface IQueryHistoryService
 {

@@ -1,8 +1,7 @@
 using Api.Framework.Models;
 using NewWords.Api.Entities;
-using System.Threading.Tasks;
 
-namespace NewWords.Api.Services
+namespace NewWords.Api.Services.interfaces
 {
     public interface IVocabularyService
     {

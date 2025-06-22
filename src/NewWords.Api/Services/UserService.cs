@@ -1,5 +1,6 @@
 using NewWords.Api.Models.DTOs.User;
 using Api.Framework.Models;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Services
 {

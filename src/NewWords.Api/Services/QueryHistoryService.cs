@@ -4,6 +4,7 @@ using Api.Framework;
 using Api.Framework.Extensions;
 using Microsoft.Extensions.Logging;
 using NewWords.Api.Entities;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Services;
 

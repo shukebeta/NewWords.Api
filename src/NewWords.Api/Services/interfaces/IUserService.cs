@@ -1,7 +1,7 @@
 using Api.Framework.Models;
 using NewWords.Api.Models.DTOs.User;
 
-namespace NewWords.Api.Services
+namespace NewWords.Api.Services.interfaces
 {
     /// <summary>
     /// Interface for user profile management services.

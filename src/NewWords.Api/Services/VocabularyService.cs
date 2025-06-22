@@ -7,6 +7,7 @@ using Api.Framework;
 using LLM;
 using LLM.Models;
 using LLM.Services;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Services
 {

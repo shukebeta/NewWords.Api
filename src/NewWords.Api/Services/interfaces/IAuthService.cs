@@ -1,8 +1,8 @@
-using NewWords.Api.Models.DTOs.Auth;
 using Api.Framework.Models;
 using NewWords.Api.Models;
+using NewWords.Api.Models.DTOs.Auth;
 
-namespace NewWords.Api.Services
+namespace NewWords.Api.Services.interfaces
 {
     /// <summary>
     /// Interface for authentication services.

@@ -7,6 +7,7 @@ using Api.Framework.Extensions;
 using Api.Framework.Helper;
 using Api.Framework.Models;
 using NewWords.Api.Models;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Services
 {

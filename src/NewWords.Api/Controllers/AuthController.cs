@@ -5,6 +5,7 @@ using NewWords.Api.Services;
 using Api.Framework.Result;
 using Microsoft.Extensions.Options;
 using NewWords.Api.Models;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers;
 

@@ -5,6 +5,7 @@ using NewWords.Api.Models.DTOs.User;
 using NewWords.Api.Services;
 using Api.Framework.Result;
 using Api.Framework.Models;
+using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers
 {
