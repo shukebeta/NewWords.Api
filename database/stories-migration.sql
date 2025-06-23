@@ -62,7 +62,11 @@ CREATE TABLE IF NOT EXISTS UserFavoriteStories (
     INDEX idx_userfavorites_created (CreatedAt)
 );
 
+-- Add LastStoryGenerationAt field to Users table
+ALTER TABLE Users ADD COLUMN LastStoryGenerationAt BIGINT NULL;
+
 -- Verify tables were created
 SELECT 'Stories table created successfully' as result;
 SELECT 'StoryWords table created successfully' as result;
 SELECT 'UserFavoriteStories table created successfully' as result;
+SELECT 'LastStoryGenerationAt field added to Users table' as result;

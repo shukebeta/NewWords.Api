@@ -46,5 +46,12 @@ namespace NewWords.Api.Entities
         public long CreatedAt { get; set; }
         public long? UpdatedAt { get; set; }
         public long? DeletedAt { get; set; }
+
+        /// <summary>
+        /// Timestamp when automatic story generation was last started for this user.
+        /// Used to track which words to include in next batch generation.
+        /// </summary>
+        [SugarColumn(IsNullable = true)]
+        public long? LastStoryGenerationAt { get; set; }
     }
 }

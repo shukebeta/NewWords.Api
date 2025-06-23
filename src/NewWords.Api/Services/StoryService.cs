@@ -1,5 +1,6 @@
 using Api.Framework;
 using Api.Framework.Models;
+using NewWords.Api.Constants;
 using NewWords.Api.Entities;
 using NewWords.Api.Repositories;
 using NewWords.Api.Services.interfaces;
@@ -151,7 +152,7 @@ namespace NewWords.Api.Services
             {
                 // Get user's recent vocabulary words
                 var recentWords = await GetUserRecentWordsAsync(userId);
-                if (recentWords.Count < 3)
+                if (recentWords.Count < StoryConstants.MinWordsForStory)
                 {
                     logger.LogInformation($"User {userId} doesn't have enough recent words for story generation. Found: {recentWords.Count}");
                     return null;
@@ -201,26 +202,132 @@ namespace NewWords.Api.Services
             }
         }
 
+        public async Task<List<Story>> GenerateStoryWithWordsAsync(int userId, List<string>? customWords = null, string? learningLanguage = null)
+        {
+            try
+            {
+                // Get user information
+                var user = await db.Queryable<User>().FirstAsync(u => u.Id == userId);
+                if (user == null)
+                {
+                    logger.LogWarning($"User not found - UserId: {userId}");
+                    return new List<Story>();
+                }
+
+                // Determine the target language
+                var targetLanguage = learningLanguage ?? user.CurrentLearningLanguage;
+                
+                // Prepare word list for story generation
+                List<string> wordsForStory;
+                List<WordCollection>? wordCollections = null;
+                bool usingRecentWords = false;
+                
+                if (customWords != null && customWords.Any())
+                {
+                    // Use custom words provided by user (don't limit to MaxWordsPerStory here - let batch generation handle it)
+                    wordsForStory = customWords.Where(w => !string.IsNullOrWhiteSpace(w))
+                        .Select(w => w.Trim())
+                        .ToList();
+                    usingRecentWords = false;
+                }
+                else
+                {
+                    // Use recent vocabulary words
+                    var recentWordCollections = await GetUserRecentWordsAsync(userId);
+                    if (recentWordCollections.Count < StoryConstants.MinWordsForStory)
+                    {
+                        logger.LogInformation($"User {userId} doesn't have enough recent words for story generation. Found: {recentWordCollections.Count}");
+                        return new List<Story>();
+                    }
+                    wordsForStory = recentWordCollections.Select(w => w.WordText).ToList();
+                    wordCollections = recentWordCollections; // Save for StoryWords relationships
+                    usingRecentWords = true;
+                }
+
+                if (wordsForStory.Count == 0)
+                {
+                    logger.LogInformation($"No valid words found for story generation for user {userId}");
+                    return new List<Story>();
+                }
+
+                // Update LastStoryGenerationAt BEFORE generation if using recent words to prevent race conditions
+                if (usingRecentWords)
+                {
+                    var generationStartTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                    user.LastStoryGenerationAt = generationStartTime;
+                    await db.Updateable(user).ExecuteCommandAsync();
+                    
+                    logger.LogInformation($"Starting manual generation with recent words for user {userId} at timestamp {generationStartTime}");
+                }
+
+                // Use core batch generation method
+                var generatedStories = await GenerateStoriesFromWordBatchesAsync(userId, wordsForStory, targetLanguage, wordCollections);
+                
+                logger.LogInformation($"Manual story generation completed for user {userId}: {generatedStories.Count} stories generated (using {(usingRecentWords ? "recent words" : "custom words")})");
+                return generatedStories;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, $"Error generating stories for user {userId}");
+                return new List<Story>();
+            }
+        }
+
+        public async Task<List<Story>> GenerateMultipleStoriesForUserAsync(int userId)
+        {
+            try
+            {
+                // Get user information
+                var user = await db.Queryable<User>().FirstAsync(u => u.Id == userId);
+                if (user == null)
+                {
+                    logger.LogWarning($"User not found - UserId: {userId}");
+                    return new List<Story>();
+                }
+
+                // Get words added since last story generation
+                var lastGenerationTime = user.LastStoryGenerationAt ?? 0;
+                var newWords = await GetUserWordsAddedSinceAsync(userId, lastGenerationTime);
+                
+                if (newWords.Count < StoryConstants.MinRecentWordsForAutomaticGeneration)
+                {
+                    logger.LogInformation($"User {userId} doesn't have enough new words for automatic story generation. Found: {newWords.Count}");
+                    return new List<Story>();
+                }
+
+                // Set generation timestamp BEFORE starting generation to prevent race conditions
+                var generationStartTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                user.LastStoryGenerationAt = generationStartTime;
+                await db.Updateable(user).ExecuteCommandAsync();
+                
+                logger.LogInformation($"Starting automatic generation of {newWords.Count} words for user {userId} at timestamp {generationStartTime}");
+
+                // Use core batch generation method
+                var wordsForStory = newWords.Select(w => w.WordText).ToList();
+                var generatedStories = await GenerateStoriesFromWordBatchesAsync(userId, wordsForStory, user.CurrentLearningLanguage, newWords);
+
+                logger.LogInformation($"Automatic story generation completed for user {userId}: {generatedStories.Count} stories generated");
+                return generatedStories;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, $"Error generating multiple stories for user {userId}");
+                return new List<Story>();
+            }
+        }
+
         public async Task GenerateStoriesForEligibleUsersAsync()
         {
             try
             {
-                // Get users who have recent words and don't have a story from today
-                var today = DateTimeOffset.UtcNow.Date;
-                var todayUnix = ((DateTimeOffset)today).ToUnixTimeSeconds();
-                var sevenDaysAgo = today.AddDays(-7);
-                var sevenDaysAgoUnix = ((DateTimeOffset)sevenDaysAgo).ToUnixTimeSeconds();
-
+                // Get users who have new words since their last story generation
                 var eligibleUsers = await db.Queryable<User>()
                     .Where(u => SqlFunc.Subqueryable<UserWord>()
                         .InnerJoin<WordExplanation>((uw, we) => uw.WordExplanationId == we.Id)
                         .Where((uw, we) => uw.UserId == u.Id && 
-                                         uw.CreatedAt > sevenDaysAgoUnix &&
-                                         we.LearningLanguage == u.CurrentLearningLanguage)
-                        .Count() >= 5)
-                    .Where(u => !SqlFunc.Subqueryable<Story>()
-                        .Where(s => s.UserId == u.Id && s.CreatedAt > todayUnix)
-                        .Any())
+                                           uw.CreatedAt > (u.LastStoryGenerationAt ?? 0) &&
+                                           we.LearningLanguage == u.CurrentLearningLanguage)
+                        .Count() >= StoryConstants.MinRecentWordsForAutomaticGeneration)
                     .ToListAsync();
 
                 logger.LogInformation($"Found {eligibleUsers.Count} eligible users for story generation");
@@ -229,13 +336,13 @@ namespace NewWords.Api.Services
                 {
                     try
                     {
-                        await GenerateStoryForUserAsync(user.Id);
-                        // Add delay to respect API rate limits
-                        await Task.Delay(1000);
+                        await GenerateMultipleStoriesForUserAsync(user.Id);
+                        // Add delay between users to respect API rate limits
+                        await Task.Delay(2000);
                     }
                     catch (Exception ex)
                     {
-                        logger.LogError(ex, $"Failed to generate story for user {user.Id}");
+                        logger.LogError(ex, $"Failed to generate stories for user {user.Id}");
                     }
                 }
             }
@@ -247,19 +354,131 @@ namespace NewWords.Api.Services
 
         private async Task<List<WordCollection>> GetUserRecentWordsAsync(int userId)
         {
-            var sevenDaysAgo = DateTimeOffset.UtcNow.AddDays(-7).ToUnixTimeSeconds();
+            var recentDaysAgo = DateTimeOffset.UtcNow.AddDays(-StoryConstants.RecentWordsDays).ToUnixTimeSeconds();
             
             return await db.Queryable<WordCollection>()
                 .InnerJoin<WordExplanation>((wc, we) => wc.Id == we.WordCollectionId)
                 .InnerJoin<UserWord>((wc, we, uw) => we.Id == uw.WordExplanationId)
                 .InnerJoin<User>((wc, we, uw, u) => uw.UserId == u.Id)
                 .Where((wc, we, uw, u) => uw.UserId == userId && 
-                                        uw.CreatedAt > sevenDaysAgo &&
-                                        we.LearningLanguage == u.CurrentLearningLanguage)
+                                          uw.CreatedAt > recentDaysAgo &&
+                                          we.LearningLanguage == u.CurrentLearningLanguage)
                 .Select((wc, we, uw, u) => wc)
                 .Distinct()
-                .Take(8)
+                .Take(StoryConstants.MaxRecentWordsToFetch)
                 .ToListAsync();
+        }
+
+        private async Task<List<WordCollection>> GetUserWordsAddedSinceAsync(int userId, long sinceTimestamp)
+        {
+            return await db.Queryable<WordCollection>()
+                .InnerJoin<WordExplanation>((wc, we) => wc.Id == we.WordCollectionId)
+                .InnerJoin<UserWord>((wc, we, uw) => we.Id == uw.WordExplanationId)
+                .InnerJoin<User>((wc, we, uw, u) => uw.UserId == u.Id)
+                .Where((wc, we, uw, u) => uw.UserId == userId && 
+                                          uw.CreatedAt > sinceTimestamp &&
+                                          we.LearningLanguage == u.CurrentLearningLanguage)
+                .Select((wc, we, uw, u) => wc)
+                .Distinct()
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Core batch generation method shared by both automatic and manual story generation.
+        /// Generates multiple stories from a list of words, handling batching and story creation.
+        /// </summary>
+        /// <param name="userId">User ID</param>
+        /// <param name="words">List of words to generate stories from</param>
+        /// <param name="learningLanguage">Target language for the stories</param>
+        /// <param name="wordCollections">Optional word collections for StoryWords relationships</param>
+        /// <returns>List of generated stories</returns>
+        private async Task<List<Story>> GenerateStoriesFromWordBatchesAsync(
+            int userId, 
+            List<string> words, 
+            string learningLanguage, 
+            List<WordCollection>? wordCollections = null)
+        {
+            var generatedStories = new List<Story>();
+
+            if (words.Count == 0)
+            {
+                return generatedStories;
+            }
+
+            // Group words into batches for multiple stories
+            var wordBatches = CreateWordBatches(words, StoryConstants.MaxWordsPerStory);
+            
+            logger.LogInformation($"Generating {wordBatches.Count} stories for user {userId} with {words.Count} words");
+
+            foreach (var wordBatch in wordBatches)
+            {
+                try
+                {
+                    // Check for duplicate stories with same word list
+                    var wordListString = string.Join(", ", wordBatch.OrderBy(w => w));
+                    var isDuplicate = await CheckForDuplicateStoryAsync(userId, wordListString);
+                    if (isDuplicate)
+                    {
+                        logger.LogInformation($"Skipping duplicate story for user {userId} with words: {wordListString}");
+                        continue;
+                    }
+
+                    // Generate story for this batch
+                    var (storyContent, modelName) = await GenerateStoryContentWithWordsAsync(wordBatch, learningLanguage);
+                    if (string.IsNullOrWhiteSpace(storyContent))
+                    {
+                        logger.LogWarning($"Failed to generate story content for user {userId} with words: {string.Join(", ", wordBatch)}");
+                        continue;
+                    }
+
+                    // Create story entity
+                    var story = new Story
+                    {
+                        UserId = userId,
+                        Content = storyContent,
+                        StoryWords = wordListString,
+                        LearningLanguage = learningLanguage,
+                        ProviderModelName = modelName,
+                        CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    };
+
+                    // Save story
+                    var storyId = await storyRepository.InsertReturnIdentityAsync(story);
+                    story.Id = storyId;
+
+                    // Save story-word relationships if word collections are provided
+                    if (wordCollections != null)
+                    {
+                        var relatedWordCollections = wordCollections.Where(w => wordBatch.Contains(w.WordText)).ToList();
+                        await SaveStoryWordsAsync(storyId, relatedWordCollections);
+                    }
+
+                    generatedStories.Add(story);
+                    
+                    // Add delay to respect API rate limits
+                    await Task.Delay(1000);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, $"Failed to generate story for user {userId} with batch: {string.Join(", ", wordBatch)}");
+                }
+            }
+
+            logger.LogInformation($"Generated {generatedStories.Count} stories for user {userId}");
+            return generatedStories;
+        }
+
+        private static List<List<string>> CreateWordBatches(List<string> words, int maxWordsPerBatch)
+        {
+            var batches = new List<List<string>>();
+            
+            for (int i = 0; i < words.Count; i += maxWordsPerBatch)
+            {
+                var batch = words.Skip(i).Take(maxWordsPerBatch).ToList();
+                batches.Add(batch);
+            }
+            
+            return batches;
         }
 
         private async Task<(string content, string? modelName)> GenerateStoryContentAsync(List<WordCollection> words, string learningLanguage)
@@ -267,6 +486,44 @@ namespace NewWords.Api.Services
             try
             {
                 var wordList = string.Join(", ", words.Select(w => w.WordText));
+                var languageName = configurationService.GetLanguageName(learningLanguage) ?? "English";
+                
+                // Use the dedicated story generation method
+                var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName);
+                
+                if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.Content))
+                {
+                    return (result.Content, result.ModelName);
+                }
+                
+                logger.LogError($"AI story generation failed: {result.ErrorMessage}");
+                return (string.Empty, null);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error in AI story generation");
+                return (string.Empty, null);
+            }
+        }
+
+        private async Task<bool> CheckForDuplicateStoryAsync(int userId, string wordListString)
+        {
+            // Check if user has a recent story with the exact same word list
+            var duplicateCheckTime = DateTimeOffset.UtcNow.AddHours(-StoryConstants.DuplicateCheckHours).ToUnixTimeSeconds();
+            
+            var existingStory = await storyRepository.GetFirstOrDefaultAsync(s => 
+                s.UserId == userId && 
+                s.StoryWords == wordListString && 
+                s.CreatedAt > duplicateCheckTime);
+                
+            return existingStory != null;
+        }
+
+        private async Task<(string content, string? modelName)> GenerateStoryContentWithWordsAsync(List<string> words, string learningLanguage)
+        {
+            try
+            {
+                var wordList = string.Join(", ", words);
                 var languageName = configurationService.GetLanguageName(learningLanguage) ?? "English";
                 
                 // Use the dedicated story generation method

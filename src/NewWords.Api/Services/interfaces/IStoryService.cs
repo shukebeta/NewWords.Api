@@ -39,6 +39,25 @@ namespace NewWords.Api.Services.interfaces
         Task<Story?> GenerateStoryForUserAsync(int userId);
 
         /// <summary>
+        /// Generates one or more stories for a user with custom word list or recent vocabulary.
+        /// Uses batch generation to create multiple stories if there are many words.
+        /// Includes duplicate prevention logic.
+        /// </summary>
+        /// <param name="userId">User ID</param>
+        /// <param name="customWords">Optional custom word list. If null, uses recent vocabulary.</param>
+        /// <param name="learningLanguage">Optional learning language. If null, uses user's current language.</param>
+        /// <returns>List of generated stories</returns>
+        Task<List<Story>> GenerateStoryWithWordsAsync(int userId, List<string>? customWords = null, string? learningLanguage = null);
+
+        /// <summary>
+        /// Generates multiple stories for a user based on their new vocabulary since last generation.
+        /// Each story contains up to MaxWordsPerStory words.
+        /// </summary>
+        /// <param name="userId">User ID</param>
+        /// <returns>List of generated stories</returns>
+        Task<List<Story>> GenerateMultipleStoriesForUserAsync(int userId);
+
+        /// <summary>
         /// Batch generates stories for all eligible users (used by cron job).
         /// </summary>
         Task GenerateStoriesForEligibleUsersAsync();

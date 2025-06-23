@@ -3,6 +3,7 @@ using Api.Framework.Result;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NewWords.Api.Entities;
+using NewWords.Api.Models.DTOs.Stories;
 using NewWords.Api.Services.interfaces;
 
 namespace NewWords.Api.Controllers
@@ -106,10 +107,13 @@ namespace NewWords.Api.Controllers
         }
 
         /// <summary>
-        /// Manually generates a story for the current user.
+        /// Manually generates one or more stories for the current user.
+        /// Can use custom word list or recent vocabulary words.
+        /// Uses batch generation to create multiple stories if there are many words.
         /// </summary>
+        /// <param name="request">Optional request with custom words and language</param>
         [HttpPost]
-        public async Task<ApiResult<Story>> Generate()
+        public async Task<ApiResult<List<Story>>> Generate([FromBody] GenerateStoryRequest? request = null)
         {
             var userId = currentUser.Id;
             if (userId == 0)
@@ -117,13 +121,18 @@ namespace NewWords.Api.Controllers
                 throw new ArgumentException("User not authenticated or ID not found.");
             }
 
-            var story = await storyService.GenerateStoryForUserAsync(userId);
-            if (story == null)
+            var stories = await storyService.GenerateStoryWithWordsAsync(
+                userId, 
+                request?.Words, 
+                request?.LearningLanguage);
+            
+            if (stories.Count == 0)
             {
-                throw new Exception("Unable to generate story. Please ensure you have recent vocabulary words.");
+                throw new Exception("Unable to generate stories. Please ensure you have recent vocabulary words or provide custom words.");
             }
 
-            return new SuccessfulResult<Story>(story, "Story generated successfully");
+            var message = stories.Count == 1 ? "Story generated successfully" : $"{stories.Count} stories generated successfully";
+            return new SuccessfulResult<List<Story>>(stories, message);
         }
     }
 }
