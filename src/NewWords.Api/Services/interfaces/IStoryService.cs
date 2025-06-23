@@ -1,24 +1,25 @@
 using Api.Framework.Models;
 using NewWords.Api.Entities;
+using NewWords.Api.Models.DTOs.Stories;
 
 namespace NewWords.Api.Services.interfaces
 {
     public interface IStoryService
     {
         /// <summary>
-        /// Gets paginated stories for a specific user.
+        /// Gets paginated stories for a specific user with favorite status.
         /// </summary>
-        Task<PageData<Story>> GetUserStoriesAsync(int userId, int pageSize, int pageNumber);
+        Task<PageData<StoryDto>> GetUserStoriesAsync(int userId, int pageSize, int pageNumber);
 
         /// <summary>
         /// Gets paginated stories from other users for discovery, sorted by popularity.
         /// </summary>
-        Task<PageData<Story>> GetStorySquareAsync(int userId, int pageSize, int pageNumber);
+        Task<PageData<StoryDto>> GetStorySquareAsync(int userId, int pageSize, int pageNumber);
 
         /// <summary>
         /// Gets paginated stories that the user has favorited.
         /// </summary>
-        Task<PageData<Story>> GetUserFavoriteStoriesAsync(int userId, int pageSize, int pageNumber);
+        Task<PageData<StoryDto>> GetUserFavoriteStoriesAsync(int userId, int pageSize, int pageNumber);
 
         /// <summary>
         /// Marks a story as read by setting FirstReadAt timestamp.

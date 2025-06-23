@@ -2,10 +2,9 @@ using Api.Framework;
 using Api.Framework.Models;
 using NewWords.Api.Constants;
 using NewWords.Api.Entities;
-using NewWords.Api.Repositories;
+using NewWords.Api.Models.DTOs.Stories;
 using NewWords.Api.Services.interfaces;
 using SqlSugar;
-using LLM.Services;
 using LLM;
 
 namespace NewWords.Api.Services
@@ -20,7 +19,7 @@ namespace NewWords.Api.Services
         IRepositoryBase<UserFavoriteStory> userFavoriteStoryRepository)
         : IStoryService
     {
-        public async Task<PageData<Story>> GetUserStoriesAsync(int userId, int pageSize, int pageNumber)
+        public async Task<PageData<StoryDto>> GetUserStoriesAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
             var pagedStories = await db.Queryable<Story>()
@@ -28,16 +27,18 @@ namespace NewWords.Api.Services
                 .OrderBy(s => s.CreatedAt, OrderByType.Desc)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
-            return new PageData<Story>
+            var storyDtos = await ConvertToStoryDtosAsync(pagedStories, userId);
+
+            return new PageData<StoryDto>
             {
-                DataList = pagedStories,
+                DataList = storyDtos,
                 TotalCount = totalCount,
                 PageIndex = pageNumber,
                 PageSize = pageSize
             };
         }
 
-        public async Task<PageData<Story>> GetStorySquareAsync(int userId, int pageSize, int pageNumber)
+        public async Task<PageData<StoryDto>> GetStorySquareAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
             var pagedStories = await db.Queryable<Story>()
@@ -46,16 +47,18 @@ namespace NewWords.Api.Services
                 .OrderBy(s => s.CreatedAt, OrderByType.Desc)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
-            return new PageData<Story>
+            var storyDtos = await ConvertToStoryDtosAsync(pagedStories, userId);
+
+            return new PageData<StoryDto>
             {
-                DataList = pagedStories,
+                DataList = storyDtos,
                 TotalCount = totalCount,
                 PageIndex = pageNumber,
                 PageSize = pageSize
             };
         }
 
-        public async Task<PageData<Story>> GetUserFavoriteStoriesAsync(int userId, int pageSize, int pageNumber)
+        public async Task<PageData<StoryDto>> GetUserFavoriteStoriesAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
             var pagedStories = await db.Queryable<Story>()
@@ -65,9 +68,11 @@ namespace NewWords.Api.Services
                 .Select((s, ufs) => s)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
-            return new PageData<Story>
+            var storyDtos = await ConvertToStoryDtosAsync(pagedStories, userId);
+
+            return new PageData<StoryDto>
             {
-                DataList = pagedStories,
+                DataList = storyDtos,
                 TotalCount = totalCount,
                 PageIndex = pageNumber,
                 PageSize = pageSize
@@ -354,18 +359,15 @@ namespace NewWords.Api.Services
 
         private async Task<List<WordCollection>> GetUserRecentWordsAsync(int userId)
         {
-            var recentDaysAgo = DateTimeOffset.UtcNow.AddDays(-StoryConstants.RecentWordsDays).ToUnixTimeSeconds();
-            
             return await db.Queryable<WordCollection>()
                 .InnerJoin<WordExplanation>((wc, we) => wc.Id == we.WordCollectionId)
                 .InnerJoin<UserWord>((wc, we, uw) => we.Id == uw.WordExplanationId)
                 .InnerJoin<User>((wc, we, uw, u) => uw.UserId == u.Id)
                 .Where((wc, we, uw, u) => uw.UserId == userId && 
-                                          uw.CreatedAt > recentDaysAgo &&
+                                          uw.CreatedAt > (u.LastStoryGenerationAt ?? 0) &&
                                           we.LearningLanguage == u.CurrentLearningLanguage)
                 .Select((wc, we, uw, u) => wc)
                 .Distinct()
-                .Take(StoryConstants.MaxRecentWordsToFetch)
                 .ToListAsync();
         }
 
@@ -542,6 +544,36 @@ namespace NewWords.Api.Services
                 logger.LogError(ex, "Error in AI story generation");
                 return (string.Empty, null);
             }
+        }
+
+        private async Task<List<StoryDto>> ConvertToStoryDtosAsync(List<Story> stories, int currentUserId)
+        {
+            if (!stories.Any())
+                return new List<StoryDto>();
+
+            // Get all story IDs for batch favorite lookup
+            var storyIds = stories.Select(s => s.Id).ToList();
+            
+            // Batch query for user's favorites
+            var userFavorites = await userFavoriteStoryRepository
+                .GetListAsync(ufs => ufs.UserId == currentUserId && storyIds.Contains(ufs.StoryId));
+            
+            var favoriteStoryIds = userFavorites.Select(ufs => ufs.StoryId).ToHashSet();
+
+            // Convert to DTOs with favorite status
+            return stories.Select(story => new StoryDto
+            {
+                Id = story.Id,
+                UserId = story.UserId,
+                Content = story.Content,
+                StoryWords = story.StoryWords,
+                LearningLanguage = story.LearningLanguage,
+                FirstReadAt = story.FirstReadAt,
+                FavoriteCount = story.FavoriteCount,
+                IsFavorited = favoriteStoryIds.Contains(story.Id),
+                ProviderModelName = story.ProviderModelName,
+                CreatedAt = story.CreatedAt
+            }).ToList();
         }
 
         private async Task SaveStoryWordsAsync(long storyId, List<WordCollection> words)

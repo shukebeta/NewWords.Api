@@ -21,7 +21,7 @@ namespace NewWords.Api.Controllers
         /// <param name="pageNumber">Page number to retrieve.</param>
         /// <returns>Paginated list of user's stories.</returns>
         [HttpGet]
-        public async Task<ApiResult<PageData<Story>>> MyStories(int pageSize = 10, int pageNumber = 1)
+        public async Task<ApiResult<PageData<StoryDto>>> MyStories(int pageSize = 10, int pageNumber = 1)
         {
             var userId = currentUser.Id;
             if (userId == 0)
@@ -30,7 +30,7 @@ namespace NewWords.Api.Controllers
             }
 
             var stories = await storyService.GetUserStoriesAsync(userId, pageSize, pageNumber);
-            return new SuccessfulResult<PageData<Story>>(stories);
+            return new SuccessfulResult<PageData<StoryDto>>(stories);
         }
 
         /// <summary>
@@ -40,7 +40,7 @@ namespace NewWords.Api.Controllers
         /// <param name="pageNumber">Page number to retrieve.</param>
         /// <returns>Paginated list of other users' stories sorted by popularity.</returns>
         [HttpGet]
-        public async Task<ApiResult<PageData<Story>>> StorySquare(int pageSize = 10, int pageNumber = 1)
+        public async Task<ApiResult<PageData<StoryDto>>> StorySquare(int pageSize = 10, int pageNumber = 1)
         {
             var userId = currentUser.Id;
             if (userId == 0)
@@ -49,7 +49,7 @@ namespace NewWords.Api.Controllers
             }
 
             var stories = await storyService.GetStorySquareAsync(userId, pageSize, pageNumber);
-            return new SuccessfulResult<PageData<Story>>(stories);
+            return new SuccessfulResult<PageData<StoryDto>>(stories);
         }
 
         /// <summary>
@@ -59,7 +59,7 @@ namespace NewWords.Api.Controllers
         /// <param name="pageNumber">Page number to retrieve.</param>
         /// <returns>Paginated list of user's favorite stories.</returns>
         [HttpGet]
-        public async Task<ApiResult<PageData<Story>>> MyFavorite(int pageSize = 10, int pageNumber = 1)
+        public async Task<ApiResult<PageData<StoryDto>>> MyFavorite(int pageSize = 10, int pageNumber = 1)
         {
             var userId = currentUser.Id;
             if (userId == 0)
@@ -68,7 +68,7 @@ namespace NewWords.Api.Controllers
             }
 
             var stories = await storyService.GetUserFavoriteStoriesAsync(userId, pageSize, pageNumber);
-            return new SuccessfulResult<PageData<Story>>(stories);
+            return new SuccessfulResult<PageData<StoryDto>>(stories);
         }
 
         /// <summary>
@@ -93,7 +93,7 @@ namespace NewWords.Api.Controllers
         /// </summary>
         /// <param name="storyId">The ID of the story to favorite/unfavorite.</param>
         [HttpPost("{storyId}")]
-        public async Task<ApiResult> Favorite(long storyId)
+        public async Task<ApiResult> ToggleFavorite(long storyId)
         {
             var userId = currentUser.Id;
             if (userId == 0)
