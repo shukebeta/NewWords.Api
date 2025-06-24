@@ -225,7 +225,7 @@ namespace NewWords.Api.Services
                 // Prepare word list for story generation
                 List<string> wordsForStory;
                 List<WordCollection>? wordCollections = null;
-                bool usingRecentWords = false;
+                bool usingRecentWords;
                 
                 if (customWords != null && customWords.Any())
                 {
@@ -266,7 +266,9 @@ namespace NewWords.Api.Services
                 }
 
                 // Use core batch generation method
-                var generatedStories = await GenerateStoriesFromWordBatchesAsync(userId, wordsForStory, targetLanguage, wordCollections);
+                // Skip duplicate check for custom words, but keep it for recent words
+                var skipDuplicateCheck = !usingRecentWords; // true for custom words, false for recent words
+                var generatedStories = await GenerateStoriesFromWordBatchesAsync(userId, wordsForStory, targetLanguage, wordCollections, skipDuplicateCheck);
                 
                 logger.LogInformation($"Manual story generation completed for user {userId}: {generatedStories.Count} stories generated (using {(usingRecentWords ? "recent words" : "custom words")})");
                 return generatedStories;
@@ -308,6 +310,7 @@ namespace NewWords.Api.Services
                 logger.LogInformation($"Starting automatic generation of {newWords.Count} words for user {userId} at timestamp {generationStartTime}");
 
                 // Use core batch generation method
+                // For automatic generation, always enable duplicate checking (default skipDuplicateCheck = false)
                 var wordsForStory = newWords.Select(w => w.WordText).ToList();
                 var generatedStories = await GenerateStoriesFromWordBatchesAsync(userId, wordsForStory, user.CurrentLearningLanguage, newWords);
 
@@ -393,12 +396,14 @@ namespace NewWords.Api.Services
         /// <param name="words">List of words to generate stories from</param>
         /// <param name="learningLanguage">Target language for the stories</param>
         /// <param name="wordCollections">Optional word collections for StoryWords relationships</param>
+        /// <param name="skipDuplicateCheck">Whether to skip duplicate checking (true for custom words, false for recent words)</param>
         /// <returns>List of generated stories</returns>
         private async Task<List<Story>> GenerateStoriesFromWordBatchesAsync(
             int userId, 
             List<string> words, 
             string learningLanguage, 
-            List<WordCollection>? wordCollections = null)
+            List<WordCollection>? wordCollections = null,
+            bool skipDuplicateCheck = false)
         {
             var generatedStories = new List<Story>();
 
@@ -416,13 +421,16 @@ namespace NewWords.Api.Services
             {
                 try
                 {
-                    // Check for duplicate stories with same word list
+                    // Check for duplicate stories with same word list (skip for custom words)
                     var wordListString = string.Join(", ", wordBatch.OrderBy(w => w));
-                    var isDuplicate = await CheckForDuplicateStoryAsync(userId, wordListString);
-                    if (isDuplicate)
+                    if (!skipDuplicateCheck)
                     {
-                        logger.LogInformation($"Skipping duplicate story for user {userId} with words: {wordListString}");
-                        continue;
+                        var isDuplicate = await CheckForDuplicateStoryAsync(userId, wordListString);
+                        if (isDuplicate)
+                        {
+                            logger.LogInformation($"Skipping duplicate story for user {userId} with words: {wordListString}");
+                            continue;
+                        }
                     }
 
                     // Generate story for this batch
