@@ -201,12 +201,12 @@ public class LanguageService(IConfigurationService configurationService) : ILang
     /// <summary>
     /// Attempt to generate story using multiple models, trying in sequence until successful
     /// </summary>
-    public async Task<StoryResult> GetStoryWithFallbackAsync(string words, string languageName)
+    public async Task<StoryResult> GetStoryWithFallbackAsync(string words, string languageName, string nativeLanguageName)
     {
         StoryResult result = new StoryResult();
         foreach (var agent in configurationService.Agents)
         {
-            result = await GetStoryAsync(words, languageName, agent);
+            result = await GetStoryAsync(words, languageName, nativeLanguageName, agent);
             if (result.IsSuccess)
             {
                 return result;
@@ -221,15 +221,18 @@ public class LanguageService(IConfigurationService configurationService) : ILang
     /// </summary>
     /// <param name="words">Comma-separated list of vocabulary words</param>
     /// <param name="languageName">Language to write the story in</param>
+    /// <param name="nativeLanguageName">User's native language for explanations</param>
     /// <param name="agent">Agent configuration</param>
     /// <returns>Story generation result</returns>
-    private async Task<StoryResult> GetStoryAsync(string words, string languageName, Agent agent)
+    private async Task<StoryResult> GetStoryAsync(string words, string languageName, string nativeLanguageName, Agent agent)
     {
         // Validate input
         if (string.IsNullOrEmpty(words))
             throw new ArgumentException("Words cannot be empty", nameof(words));
         if (string.IsNullOrEmpty(languageName))
             throw new ArgumentException("Language name cannot be empty", nameof(languageName));
+        if (string.IsNullOrEmpty(nativeLanguageName))
+            throw new ArgumentException("Native language name cannot be empty", nameof(nativeLanguageName));
         if (string.IsNullOrEmpty(agent.BaseUrl) || string.IsNullOrEmpty(agent.ApiKey) || string.IsNullOrEmpty(agent.ModelName))
             throw new ArgumentException("At least one of the Agent data is null", nameof(agent));
 
@@ -243,40 +246,64 @@ public class LanguageService(IConfigurationService configurationService) : ILang
             var systemPrompt = $"""
                                 <story_generator_prompt>
                                     <role>
-                                        <description>You are a creative story writer who specializes in creating engaging, simple stories that help language learners understand vocabulary words in context.</description>
-                                        <task>Write a coherent, interesting story in {languageName} that naturally incorporates the specified vocabulary words.</task>
+                                        <description>You are a creative story writer who specializes in creating engaging, authentic stories that help language learners understand vocabulary words in natural contexts.</description>
+                                        <task>Write a coherent, interesting story in {languageName} that naturally incorporates the specified vocabulary words while avoiding clichéd plots and ensuring realistic character behavior.</task>
                                     </role>
                                     
-                                    <requirements>
-                                        <length>Write approximately 100-150 words</length>
-                                        <vocabulary>Use basic, simple vocabulary except for the specified words that should be incorporated</vocabulary>
-                                        <formatting>**Bold the specified vocabulary words** using markdown syntax (**word**)</formatting>
-                                        <context>Make sure the vocabulary words are used in meaningful contexts so readers can understand their meaning from the story</context>
-                                        <engagement>Make the story interesting and engaging to read</engagement>
-                                        <coherence>Ensure the story flows naturally and makes logical sense</coherence>
-                                    </requirements>
+                                    <core_requirements>
+                                        <length>Write approximately 300-400 words for rich storytelling</length>
+                                        <vocabulary_integration>
+                                            <target_words>**Bold the specified vocabulary words** using markdown syntax (**word**)</target_words>
+                                            <complex_words>For any complex words beyond beginner level that you use (not the target words), add native language explanations using this format: complex_word ({nativeLanguageName}: meaning)</complex_words>
+                                            <natural_usage>Integrate vocabulary words organically into the story - they should feel necessary for the plot, not forced. Use each target word only 1-2 times maximum to avoid repetition</natural_usage>
+                                            <complex_word_identification>Identify and explain words that intermediate learners might not know, such as: academic vocabulary, business terms, technical words, sophisticated adjectives, formal verbs, etc.</complex_word_identification>
+                                        </vocabulary_integration>
+                                        <avoid_cliches>
+                                            <forbidden_plots>Never use: "it was all a dream", "love at first sight", "the chosen one", "everything was perfect", "happily ever after"</forbidden_plots>
+                                            <plot_variety>Vary story settings, time periods, character types. Mix genres: slice-of-life, workplace, mystery, sci-fi, contemporary, etc.</plot_variety>
+                                            <unique_scenarios>Create original situations and unexpected plot developments</unique_scenarios>
+                                        </avoid_cliches>
+                                        <character_motivation>
+                                            <realistic_behavior>Every character action must have clear, logical motivation</realistic_behavior>
+                                            <appropriate_dialogue>Characters should speak and act according to their personality, age, and background</appropriate_dialogue>
+                                            <proportionate_emotions>Emotional responses should match the events - avoid melodrama</proportionate_emotions>
+                                        </character_motivation>
+                                    </core_requirements>
                                     
                                     <format_requirements>
-                                        <structure>Simple narrative structure with clear beginning, middle, and end</structure>
+                                        <structure>Focused narrative with clear progression - can be a single meaningful scene or short sequence</structure>
                                         <formatting>
                                             <requirement>Use markdown formatting for bold vocabulary words</requirement>
-                                            <requirement>Write in clear, simple sentences</requirement>
+                                            <requirement>Add {nativeLanguageName} explanations for complex words: complex_word (meaning in {nativeLanguageName})</requirement>
+                                            <requirement>Write in varied sentence structures for natural flow</requirement>
                                             <requirement>Do not use code blocks, output plain markdown content</requirement>
                                             <requirement>Do not include any introductory or concluding meta-text</requirement>
                                         </formatting>
                                     </format_requirements>
                                     
-                                    <example>
-                                        When using words like "adventure, mountain, discover":
+                                    <enhanced_example>
+                                        Using words like "negotiate, deadline, compromise":
                                         
-                                        Sarah packed her backpack for the big **adventure**. She had always dreamed of climbing the tall **mountain** that stood behind her village. Early in the morning, she started walking up the rocky path. Hours later, she reached the top and could **discover** a beautiful hidden valley below. The view was so amazing that she knew this **adventure** would stay in her memory forever.
-                                    </example>
+                                        Maya stared at the spreadsheet (电子表格) on her laptop screen. The **deadline** for the marketing proposal (提案) was tomorrow, but her team was split on the creative direction. Jake wanted bold graphics, while Sarah insisted on minimalist (极简主义的) design.
+                                        
+                                        "We need to **negotiate** a solution," Maya said, closing her laptop. "What if we create two versions?"
+                                        
+                                        Jake frowned. "That doubles our workload (工作量)."
+                                        
+                                        "Sometimes the best solution is a **compromise**," Sarah added thoughtfully. "What if we use bold colors but keep the layout clean?"
+                                        
+                                        Maya smiled. It wasn't perfect, but it might just work. In business, she'd learned, the best decisions weren't always the most obvious ones.
+                                    </enhanced_example>
                                     
                                     <important_reminders>
                                         1. Write ONLY the story content, no additional explanations
                                         2. Bold ALL specified vocabulary words using **word** syntax
-                                        3. Keep the language level appropriate for learners
-                                        4. Ensure the story is complete and engaging
+                                        3. Add {nativeLanguageName} explanations for complex words: word ({nativeLanguageName}: meaning)
+                                        4. Create realistic characters with clear motivations
+                                        5. Avoid predictable plot patterns
+                                        6. Ensure natural vocabulary usage within meaningful contexts
+                                        7. Use each target vocabulary word maximum 1-2 times to avoid repetition
+                                        8. Identify and explain complex words that intermediate learners might not know
                                     </important_reminders>
                                 </story_generator_prompt>
                                 """;

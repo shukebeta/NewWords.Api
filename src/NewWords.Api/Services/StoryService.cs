@@ -172,7 +172,7 @@ namespace NewWords.Api.Services
                 }
 
                 // Generate story using AI
-                var (storyContent, modelName) = await GenerateStoryContentAsync(recentWords, user.CurrentLearningLanguage);
+                var (storyContent, modelName) = await GenerateStoryContentAsync(recentWords, user.CurrentLearningLanguage, user.NativeLanguage);
                 if (string.IsNullOrWhiteSpace(storyContent))
                 {
                     logger.LogError($"Failed to generate story content for user {userId}");
@@ -426,7 +426,7 @@ namespace NewWords.Api.Services
                     }
 
                     // Generate story for this batch
-                    var (storyContent, modelName) = await GenerateStoryContentWithWordsAsync(wordBatch, learningLanguage);
+                    var (storyContent, modelName) = await GenerateStoryContentWithWordsAsync(userId, wordBatch, learningLanguage);
                     if (string.IsNullOrWhiteSpace(storyContent))
                     {
                         logger.LogWarning($"Failed to generate story content for user {userId} with words: {string.Join(", ", wordBatch)}");
@@ -483,15 +483,16 @@ namespace NewWords.Api.Services
             return batches;
         }
 
-        private async Task<(string content, string? modelName)> GenerateStoryContentAsync(List<WordCollection> words, string learningLanguage)
+        private async Task<(string content, string? modelName)> GenerateStoryContentAsync(List<WordCollection> words, string learningLanguage, string nativeLanguage)
         {
             try
             {
                 var wordList = string.Join(", ", words.Select(w => w.WordText));
                 var languageName = configurationService.GetLanguageName(learningLanguage) ?? "English";
+                var nativeLanguageName = configurationService.GetLanguageName(nativeLanguage) ?? "Chinese";
                 
-                // Use the dedicated story generation method
-                var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName);
+                // Use the dedicated story generation method with native language
+                var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName, nativeLanguageName);
                 
                 if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.Content))
                 {
@@ -521,15 +522,24 @@ namespace NewWords.Api.Services
             return existingStory != null;
         }
 
-        private async Task<(string content, string? modelName)> GenerateStoryContentWithWordsAsync(List<string> words, string learningLanguage)
+        private async Task<(string content, string? modelName)> GenerateStoryContentWithWordsAsync(int userId, List<string> words, string learningLanguage)
         {
             try
             {
+                // Get user's native language
+                var user = await db.Queryable<User>().FirstAsync(u => u.Id == userId);
+                if (user == null)
+                {
+                    logger.LogWarning($"User not found for story generation - UserId: {userId}");
+                    return (string.Empty, null);
+                }
+
                 var wordList = string.Join(", ", words);
                 var languageName = configurationService.GetLanguageName(learningLanguage) ?? "English";
+                var nativeLanguageName = configurationService.GetLanguageName(user.NativeLanguage) ?? "Chinese";
                 
-                // Use the dedicated story generation method
-                var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName);
+                // Use the dedicated story generation method with native language
+                var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName, nativeLanguageName);
                 
                 if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.Content))
                 {

@@ -14,8 +14,9 @@ public interface ILanguageService
     /// </summary>
     /// <param name="words">Comma-separated list of vocabulary words to include in the story</param>
     /// <param name="languageName">The language to write the story in (e.g., "English", "Chinese")</param>
+    /// <param name="nativeLanguageName">The user's native language for complex word explanations (e.g., "Chinese", "Spanish")</param>
     /// <returns>Story generation result</returns>
-    Task<StoryResult> GetStoryWithFallbackAsync(string words, string languageName);
+    Task<StoryResult> GetStoryWithFallbackAsync(string words, string languageName, string nativeLanguageName);
 
     /// <summary>
     /// Detects the language of the given text and returns LanguageDetectionResult that contains the language code along with the confidence level.
