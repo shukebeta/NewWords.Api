@@ -18,12 +18,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISqlSugarClient>(_ =>
         {
             var client = new SqlSugarScope(new ConnectionConfig
-                {
-                    ConnectionString = options.ConnectionString, // Required
-                    DbType = SqlSugar.DbType.MySql, // Required
-                    IsAutoCloseConnection = true,
-                    InitKeyType = InitKeyType.Attribute
-                },
+            {
+                ConnectionString = options.ConnectionString, // Required
+                DbType = SqlSugar.DbType.MySql, // Required
+                IsAutoCloseConnection = true,
+                InitKeyType = InitKeyType.Attribute
+            },
                 db =>
                 {
                     db.Aop.OnLogExecuting = (sql, pars) =>
@@ -62,7 +62,7 @@ public static class ServiceCollectionExtensions
                                 case DbType.DateTime:
                                 case DbType.DateTime2:
                                 case DbType.DateTimeOffset:
-                                    v = $"'{((DateTime) p.Value):yyyy-MM-dd HH:mm:ss}'";
+                                    v = $"'{((DateTime)p.Value):yyyy-MM-dd HH:mm:ss}'";
                                     break;
                                 default:
                                     string strValue = p.Value?.ToString() ?? "";

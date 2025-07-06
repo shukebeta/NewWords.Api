@@ -10,7 +10,7 @@ public static class EnumExtensions
         var memberInfo = type.GetMember(element.ToString());
         var attributes = memberInfo[0].GetCustomAttributes(typeof(DescriptionAttribute), false);
         var description = attributes.Length > 0
-            ? ((DescriptionAttribute) attributes[0]).Description
+            ? ((DescriptionAttribute)attributes[0]).Description
             : element.ToString();
         return string.Format(description, extraObjets);
     }
@@ -20,8 +20,8 @@ public static class EnumExtensions
     {
         try
         {
-            return (((int) (object) type &
-                     (int) (object) value!) == (int) (object) value);
+            return (((int)(object)type &
+                     (int)(object)value!) == (int)(object)value);
         }
         catch
         {
@@ -30,32 +30,41 @@ public static class EnumExtensions
     }
 
     //checks if the value is only the provided type
-    public static bool Is<T>(this Enum type, T value) {
-        try {
+    public static bool Is<T>(this Enum type, T value)
+    {
+        try
+        {
             return (int)(object)type == (int)(object)value!;
         }
-        catch {
+        catch
+        {
             return false;
         }
     }
 
     //appends a value
-    public static T Add<T>(this Enum type, T value) {
-        try {
+    public static T Add<T>(this Enum type, T value)
+    {
+        try
+        {
             return (T)(object)(((int)(object)type | (int)(object)value!));
         }
-        catch(Exception ex) {
+        catch (Exception ex)
+        {
             throw new ArgumentException(
                 $"Could not append value from enumerated type '{typeof(T).Name}'.", ex);
         }
     }
 
     //completely removes the value
-    public static T Remove<T>(this Enum type, T value) {
-        try {
+    public static T Remove<T>(this Enum type, T value)
+    {
+        try
+        {
             return (T)(object)(((int)(object)type & ~(int)(object)value!));
         }
-        catch (Exception ex) {
+        catch (Exception ex)
+        {
             throw new ArgumentException(
                 $"Could not remove value from enumerated type '{typeof(T).Name}'.", ex);
         }

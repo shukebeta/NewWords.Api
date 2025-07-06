@@ -131,7 +131,7 @@ public class LlmController(
 
                         var explanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(wcRecord.WordText, NativeLanguage, LearnLanguage);
 
-                        if ( explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
+                        if (explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
                         {
                             var newExplanation = new WordExplanation
                             {

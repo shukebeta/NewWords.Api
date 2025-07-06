@@ -19,7 +19,8 @@ public class QueryHistoryService(
         {
             try
             {
-                await repo.InsertAsync(new QueryHistory {
+                await repo.InsertAsync(new QueryHistory
+                {
                     WordCollectionId = wordCollectionId,
                     UserId = userId,
                     CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()

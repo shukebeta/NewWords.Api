@@ -319,7 +319,7 @@ public class RepositoryBase<TEntity>(ISqlSugarClient dbClient) : IRepositoryBase
             return default;
         }
 
-        return (T) r;
+        return (T)r;
     }
 
     public virtual async Task<int> ExecuteSqlAsync(string sql, object? param = null)
@@ -374,7 +374,7 @@ public class RepositoryBase<TEntity>(ISqlSugarClient dbClient) : IRepositoryBase
             }
 
             // If the value is not of type T, attempt to convert it
-            return (T) Convert.ChangeType(value, typeof(T));
+            return (T)Convert.ChangeType(value, typeof(T));
         }
         catch (Exception ex)
         {

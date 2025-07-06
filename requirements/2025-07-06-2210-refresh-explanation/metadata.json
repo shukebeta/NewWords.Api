@@ -1,0 +1,22 @@
+{
+  "id": "refresh-explanation",
+  "started": "2025-07-06T22:10:00Z",
+  "lastUpdated": "2025-07-06T22:15:00Z",
+  "status": "complete",
+  "phase": "complete",
+  "progress": {
+    "discovery": { "answered": 5, "total": 5 },
+    "detail": { "answered": 5, "total": 5 }
+  },
+  "contextFiles": [
+    "/home/davidwei/RiderProjects/NewWords.Api/src/NewWords.Api/Controllers/VocabularyController.cs",
+    "/home/davidwei/RiderProjects/NewWords.Api/src/NewWords.Api/Services/VocabularyService.cs",
+    "/home/davidwei/RiderProjects/NewWords.Api/src/LLM/Services/LanguageService.cs",
+    "/home/davidwei/RiderProjects/NewWords.Api/src/LLM/Services/ConfigurationService.cs"
+  ],
+  "relatedFeatures": [
+    "VocabularyController.AddUserWordAsync",
+    "LanguageService.GetMarkdownExplanationWithFallbackAsync",
+    "Agent Configuration System"
+  ]
+}

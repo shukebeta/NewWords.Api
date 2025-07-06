@@ -71,5 +71,23 @@ namespace NewWords.Api.Controllers
             await vocabularyService.DelUserWordAsync(userId, wordExplanationId);
             return Success();
         }
+
+        /// <summary>
+        /// Refreshes the explanation for a word using the current first agent if different from the original provider.
+        /// </summary>
+        /// <param name="wordExplanationId">The ID of the word explanation to refresh.</param>
+        /// <returns>The refreshed word explanation.</returns>
+        [HttpPut("{wordExplanationId}")]
+        public async Task<ApiResult<WordExplanation>> RefreshExplanation(long wordExplanationId)
+        {
+            var userId = currentUser.Id;
+            if (userId == 0)
+            {
+                throw new ArgumentException("User not authenticated or ID not found.");
+            }
+
+            var refreshedExplanation = await vocabularyService.RefreshUserWordExplanationAsync(wordExplanationId);
+            return new SuccessfulResult<WordExplanation>(refreshedExplanation);
+        }
     }
 }

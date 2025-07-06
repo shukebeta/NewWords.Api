@@ -101,7 +101,7 @@ namespace NewWords.Api.Services
             try
             {
                 await db.AsTenant().BeginTranAsync();
-                
+
                 var story = await storyRepository.GetFirstOrDefaultAsync(s => s.Id == storyId);
                 if (story == null)
                 {
@@ -140,7 +140,7 @@ namespace NewWords.Api.Services
 
                 await storyRepository.UpdateAsync(story);
                 await db.AsTenant().CommitTranAsync();
-                
+
                 return isFavorited;
             }
             catch (Exception ex)
@@ -221,12 +221,12 @@ namespace NewWords.Api.Services
 
                 // Determine the target language
                 var targetLanguage = learningLanguage ?? user.CurrentLearningLanguage;
-                
+
                 // Prepare word list for story generation
                 List<string> wordsForStory;
                 List<WordCollection>? wordCollections = null;
                 bool usingRecentWords;
-                
+
                 if (customWords != null && customWords.Any())
                 {
                     // Use custom words provided by user (don't limit to MaxWordsPerStory here - let batch generation handle it)
@@ -261,7 +261,7 @@ namespace NewWords.Api.Services
                     var generationStartTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     user.LastStoryGenerationAt = generationStartTime;
                     await db.Updateable(user).ExecuteCommandAsync();
-                    
+
                     logger.LogInformation($"Starting manual generation with recent words for user {userId} at timestamp {generationStartTime}");
                 }
 
@@ -269,7 +269,7 @@ namespace NewWords.Api.Services
                 // Skip duplicate check for custom words, but keep it for recent words
                 var skipDuplicateCheck = !usingRecentWords; // true for custom words, false for recent words
                 var generatedStories = await GenerateStoriesFromWordBatchesAsync(userId, wordsForStory, targetLanguage, wordCollections, skipDuplicateCheck);
-                
+
                 logger.LogInformation($"Manual story generation completed for user {userId}: {generatedStories.Count} stories generated (using {(usingRecentWords ? "recent words" : "custom words")})");
                 return generatedStories;
             }
@@ -295,7 +295,7 @@ namespace NewWords.Api.Services
                 // Get words added since last story generation
                 var lastGenerationTime = user.LastStoryGenerationAt ?? 0;
                 var newWords = await GetUserWordsAddedSinceAsync(userId, lastGenerationTime);
-                
+
                 if (newWords.Count < StoryConstants.MinRecentWordsForAutomaticGeneration)
                 {
                     logger.LogInformation($"User {userId} doesn't have enough new words for automatic story generation. Found: {newWords.Count}");
@@ -306,7 +306,7 @@ namespace NewWords.Api.Services
                 var generationStartTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 user.LastStoryGenerationAt = generationStartTime;
                 await db.Updateable(user).ExecuteCommandAsync();
-                
+
                 logger.LogInformation($"Starting automatic generation of {newWords.Count} words for user {userId} at timestamp {generationStartTime}");
 
                 // Use core batch generation method
@@ -332,7 +332,7 @@ namespace NewWords.Api.Services
                 var eligibleUsers = await db.Queryable<User>()
                     .Where(u => SqlFunc.Subqueryable<UserWord>()
                         .InnerJoin<WordExplanation>((uw, we) => uw.WordExplanationId == we.Id)
-                        .Where((uw, we) => uw.UserId == u.Id && 
+                        .Where((uw, we) => uw.UserId == u.Id &&
                                            uw.CreatedAt > (u.LastStoryGenerationAt ?? 0) &&
                                            we.LearningLanguage == u.CurrentLearningLanguage)
                         .Count() >= StoryConstants.MinRecentWordsForAutomaticGeneration)
@@ -366,7 +366,7 @@ namespace NewWords.Api.Services
                 .InnerJoin<WordExplanation>((wc, we) => wc.Id == we.WordCollectionId)
                 .InnerJoin<UserWord>((wc, we, uw) => we.Id == uw.WordExplanationId)
                 .InnerJoin<User>((wc, we, uw, u) => uw.UserId == u.Id)
-                .Where((wc, we, uw, u) => uw.UserId == userId && 
+                .Where((wc, we, uw, u) => uw.UserId == userId &&
                                           uw.CreatedAt > (u.LastStoryGenerationAt ?? 0) &&
                                           we.LearningLanguage == u.CurrentLearningLanguage)
                 .Select((wc, we, uw, u) => wc)
@@ -380,7 +380,7 @@ namespace NewWords.Api.Services
                 .InnerJoin<WordExplanation>((wc, we) => wc.Id == we.WordCollectionId)
                 .InnerJoin<UserWord>((wc, we, uw) => we.Id == uw.WordExplanationId)
                 .InnerJoin<User>((wc, we, uw, u) => uw.UserId == u.Id)
-                .Where((wc, we, uw, u) => uw.UserId == userId && 
+                .Where((wc, we, uw, u) => uw.UserId == userId &&
                                           uw.CreatedAt > sinceTimestamp &&
                                           we.LearningLanguage == u.CurrentLearningLanguage)
                 .Select((wc, we, uw, u) => wc)
@@ -399,9 +399,9 @@ namespace NewWords.Api.Services
         /// <param name="skipDuplicateCheck">Whether to skip duplicate checking (true for custom words, false for recent words)</param>
         /// <returns>List of generated stories</returns>
         private async Task<List<Story>> GenerateStoriesFromWordBatchesAsync(
-            int userId, 
-            List<string> words, 
-            string learningLanguage, 
+            int userId,
+            List<string> words,
+            string learningLanguage,
             List<WordCollection>? wordCollections = null,
             bool skipDuplicateCheck = false)
         {
@@ -414,7 +414,7 @@ namespace NewWords.Api.Services
 
             // Group words into batches for multiple stories
             var wordBatches = CreateWordBatches(words, StoryConstants.MaxWordsPerStory);
-            
+
             logger.LogInformation($"Generating {wordBatches.Count} stories for user {userId} with {words.Count} words");
 
             foreach (var wordBatch in wordBatches)
@@ -464,7 +464,7 @@ namespace NewWords.Api.Services
                     }
 
                     generatedStories.Add(story);
-                    
+
                     // Add delay to respect API rate limits
                     await Task.Delay(1000);
                 }
@@ -481,13 +481,13 @@ namespace NewWords.Api.Services
         private static List<List<string>> CreateWordBatches(List<string> words, int maxWordsPerBatch)
         {
             var batches = new List<List<string>>();
-            
+
             for (int i = 0; i < words.Count; i += maxWordsPerBatch)
             {
                 var batch = words.Skip(i).Take(maxWordsPerBatch).ToList();
                 batches.Add(batch);
             }
-            
+
             return batches;
         }
 
@@ -498,15 +498,15 @@ namespace NewWords.Api.Services
                 var wordList = string.Join(", ", words.Select(w => w.WordText));
                 var languageName = configurationService.GetLanguageName(learningLanguage) ?? "English";
                 var nativeLanguageName = configurationService.GetLanguageName(nativeLanguage) ?? "Chinese";
-                
+
                 // Use the dedicated story generation method with native language
                 var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName, nativeLanguageName);
-                
+
                 if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.Content))
                 {
                     return (result.Content, result.ModelName);
                 }
-                
+
                 logger.LogError($"AI story generation failed: {result.ErrorMessage}");
                 return (string.Empty, null);
             }
@@ -521,12 +521,12 @@ namespace NewWords.Api.Services
         {
             // Check if user has a recent story with the exact same word list
             var duplicateCheckTime = DateTimeOffset.UtcNow.AddHours(-StoryConstants.DuplicateCheckHours).ToUnixTimeSeconds();
-            
-            var existingStory = await storyRepository.GetFirstOrDefaultAsync(s => 
-                s.UserId == userId && 
-                s.StoryWords == wordListString && 
+
+            var existingStory = await storyRepository.GetFirstOrDefaultAsync(s =>
+                s.UserId == userId &&
+                s.StoryWords == wordListString &&
                 s.CreatedAt > duplicateCheckTime);
-                
+
             return existingStory != null;
         }
 
@@ -545,15 +545,15 @@ namespace NewWords.Api.Services
                 var wordList = string.Join(", ", words);
                 var languageName = configurationService.GetLanguageName(learningLanguage) ?? "English";
                 var nativeLanguageName = configurationService.GetLanguageName(user.NativeLanguage) ?? "Chinese";
-                
+
                 // Use the dedicated story generation method with native language
                 var result = await languageService.GetStoryWithFallbackAsync(wordList, languageName, nativeLanguageName);
-                
+
                 if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.Content))
                 {
                     return (result.Content, result.ModelName);
                 }
-                
+
                 logger.LogError($"AI story generation failed: {result.ErrorMessage}");
                 return (string.Empty, null);
             }
@@ -571,11 +571,11 @@ namespace NewWords.Api.Services
 
             // Get all story IDs for batch favorite lookup
             var storyIds = stories.Select(s => s.Id).ToList();
-            
+
             // Batch query for user's favorites
             var userFavorites = await userFavoriteStoryRepository
                 .GetListAsync(ufs => ufs.UserId == currentUserId && storyIds.Contains(ufs.StoryId));
-            
+
             var favoriteStoryIds = userFavorites.Select(ufs => ufs.StoryId).ToHashSet();
 
             // Convert to DTOs with favorite status

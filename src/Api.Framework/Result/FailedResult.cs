@@ -1,8 +1,8 @@
 namespace Api.Framework.Result;
 
-public class FailedResult: ApiResult
+public class FailedResult : ApiResult
 {
-    public FailedResult(string message=FrameworkConstants.DefaultErrorMessage): this(FrameworkConstants.DefaultErrorCode, message)
+    public FailedResult(string message = FrameworkConstants.DefaultErrorMessage) : this(FrameworkConstants.DefaultErrorCode, message)
     {
     }
 

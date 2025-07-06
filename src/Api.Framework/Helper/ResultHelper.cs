@@ -14,7 +14,7 @@ public static class ResultHelper
         var message = string.Format(errMessage, extraObjects);
         return new FailedResult<TData>(data, message, errorCode);
     }
- 
+
     public static FailedResult New(int errCode, string errMessage, params object[] extraObjects)
     {
         var message = string.Format(errMessage, extraObjects);

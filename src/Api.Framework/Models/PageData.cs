@@ -1,6 +1,6 @@
 ﻿namespace Api.Framework.Models;
 
-public class PageData<TEntity> where TEntity : class,new()
+public class PageData<TEntity> where TEntity : class, new()
 {
 
     public int PageIndex { get; set; } = 1;

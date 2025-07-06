@@ -25,7 +25,7 @@ namespace NewWords.Api.Services
                 {
                     var now = DateTime.UtcNow;
                     var nextRun = DateTime.Today.AddDays(1).AddHours(2); // 2 AM next day
-                    
+
                     if (now.Hour >= 2) // If it's already past 2 AM today, schedule for tomorrow
                     {
                         nextRun = DateTime.Today.AddDays(1).AddHours(2);
@@ -64,12 +64,12 @@ namespace NewWords.Api.Services
             try
             {
                 _logger.LogInformation("Starting daily story generation");
-                
+
                 using var scope = _serviceProvider.CreateScope();
                 var storyService = scope.ServiceProvider.GetRequiredService<IStoryService>();
-                
+
                 await storyService.GenerateStoriesForEligibleUsersAsync();
-                
+
                 _logger.LogInformation("Daily story generation completed");
             }
             catch (Exception ex)

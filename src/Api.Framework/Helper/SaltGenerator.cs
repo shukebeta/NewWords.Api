@@ -19,7 +19,7 @@ public static class SaltGenerator
     public static string GenerateSaltString(int length)
     {
         // Generate the salt bytes
-        byte[] saltBytes = GenerateSalt(length/2);
+        byte[] saltBytes = GenerateSalt(length / 2);
 
         // Convert the byte array to a hexadecimal string
         return BitConverter.ToString(saltBytes).Replace("-", "");

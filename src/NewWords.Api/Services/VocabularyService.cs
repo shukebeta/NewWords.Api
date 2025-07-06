@@ -29,8 +29,8 @@ namespace NewWords.Api.Services
             RefAsync<int> totalCount = 0;
             var pagedWords = await db.Queryable<WordExplanation>()
                 .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
-                .Where((we,uw) => uw.UserId == userId)
-                .OrderBy((we,uw) => uw.CreatedAt, OrderByType.Desc)
+                .Where((we, uw) => uw.UserId == userId)
+                .OrderBy((we, uw) => uw.CreatedAt, OrderByType.Desc)
                 .Select((we, uw) => new WordExplanation()
                 {
                     CreatedAt = uw.CreatedAt,
@@ -86,6 +86,67 @@ namespace NewWords.Api.Services
             }
         }
 
+        public async Task<WordExplanation> RefreshUserWordExplanationAsync(long wordExplanationId)
+        {
+            // 1. Get current explanation
+            var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
+            if (explanation == null)
+            {
+                logger.LogWarning($"Word explanation not found for refresh - WordExplanationId: {wordExplanationId}");
+                throw new ArgumentException("Word explanation not found");
+            }
+
+            // 2. Get current first agent
+            var firstAgent = configurationService.Agents.FirstOrDefault();
+            if (firstAgent == null)
+            {
+                logger.LogError("No agents configured for word explanation refresh");
+                throw new InvalidOperationException("No agents configured");
+            }
+
+            var currentFirstAgentName = $"{firstAgent.Provider}:{firstAgent.ModelName}";
+
+            // 3. Compare with existing provider model
+            if (currentFirstAgentName == explanation.ProviderModelName)
+            {
+                logger.LogInformation($"Word explanation already uses current AI model, no refresh needed - WordExplanationId: {wordExplanationId}");
+                throw new InvalidOperationException("Word explanation is already up to date with the latest AI model");
+            }
+
+            // 4. Get language names for regeneration
+            var learningLanguageName = configurationService.GetLanguageName(explanation.LearningLanguage);
+            var explanationLanguageName = configurationService.GetLanguageName(explanation.ExplanationLanguage);
+
+            if (learningLanguageName == null || explanationLanguageName == null)
+            {
+                logger.LogError($"Language names not found for refresh - LearningLanguage: {explanation.LearningLanguage}, ExplanationLanguage: {explanation.ExplanationLanguage}");
+                throw new InvalidOperationException("Language names not found");
+            }
+
+            // 5. Generate new explanation
+            var newExplanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(
+                explanation.WordText, explanationLanguageName, learningLanguageName);
+
+            // 6. Handle generation failure
+            if (!newExplanationResult.IsSuccess || string.IsNullOrWhiteSpace(newExplanationResult.Markdown))
+            {
+                logger.LogWarning($"Failed to generate new explanation for word '{explanation.WordText}' - WordExplanationId: {wordExplanationId}, Error: {newExplanationResult.ErrorMessage}");
+                return explanation; // Return original on failure
+            }
+
+            // 7. Update explanation
+            explanation.MarkdownExplanation = newExplanationResult.Markdown;
+            explanation.ProviderModelName = newExplanationResult.ModelName;
+            explanation.CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds();
+
+            // 8. Save changes
+            await wordExplanationRepository.UpdateAsync(explanation);
+
+            logger.LogInformation($"Successfully refreshed word explanation - WordExplanationId: {wordExplanationId}, Word: '{explanation.WordText}', NewProvider: {newExplanationResult.ModelName}");
+
+            return explanation;
+        }
+
         private async Task _HandleUserWord(int userId, WordExplanation explanationToReturn)
         {
             var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
@@ -108,8 +169,8 @@ namespace NewWords.Api.Services
             long wordCollectionId)
         {
             var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
-                we.WordCollectionId == wordCollectionId && 
-                we.LearningLanguage == learningLanguageCode && 
+                we.WordCollectionId == wordCollectionId &&
+                we.LearningLanguage == learningLanguageCode &&
                 we.ExplanationLanguage == explanationLanguageCode);
 
             if (explanation is not null) return explanation;
@@ -147,7 +208,7 @@ namespace NewWords.Api.Services
         {
             var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
             wordText = wordText.Trim();
-            
+
             // Try to find existing word (language-agnostic)
             var existingWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc =>
                 wc.WordText == wordText);
@@ -157,7 +218,7 @@ namespace NewWords.Api.Services
                 // Create new word record
                 return await _AddWordCollection(wordText, currentTime);
             }
-            
+
             // Update existing word
             existingWord.QueryCount++;
             existingWord.UpdatedAt = currentTime;
@@ -182,13 +243,13 @@ namespace NewWords.Api.Services
             try
             {
                 await db.AsTenant().BeginTranAsync();
-                
+
                 // Delete the user word
                 await userWordRepository.DeleteAsync(userWord);
-                
+
                 // Perform cleanup check
                 await _CleanupOrphanedRecords(userWord.WordExplanationId);
-                
+
                 await db.AsTenant().CommitTranAsync();
             }
             catch (Exception ex)
@@ -202,7 +263,7 @@ namespace NewWords.Api.Services
         private async Task _CleanupOrphanedRecords(long wordExplanationId)
         {
             const int cleanupThresholdMinutes = 5;
-            
+
             // Get the word explanation
             var wordExplanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
             if (wordExplanation == null)
@@ -235,7 +296,7 @@ namespace NewWords.Api.Services
             if (timeDifferenceMinutes <= cleanupThresholdMinutes)
             {
                 // Check if any other word explanations reference this word collection
-                var otherExplanationExists = await wordExplanationRepository.GetFirstOrDefaultAsync(we => 
+                var otherExplanationExists = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
                     we.WordCollectionId == wordCollection.Id && we.Id != wordExplanationId);
 
                 if (otherExplanationExists == null)
@@ -258,7 +319,7 @@ namespace NewWords.Api.Services
         private async Task _CleanupQueryHistory(long wordCollectionId)
         {
             var deletedCount = await queryHistoryRepository.DeleteReturnRowsAsync(qh => qh.WordCollectionId == wordCollectionId);
-            
+
             if (deletedCount > 0)
             {
                 logger.LogInformation($"Cleaned up {deletedCount} query history records for word collection ID: {wordCollectionId}");

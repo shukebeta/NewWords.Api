@@ -5,7 +5,7 @@ public static class DateTimeExtensions
     public static long ToUnixTimeSeconds(this DateTime dateTime)
     {
         TimeSpan timeSpan = dateTime.ToUniversalTime() - DateTime.UnixEpoch;
-        return (long) timeSpan.TotalSeconds;
+        return (long)timeSpan.TotalSeconds;
     }
 
     public static bool EarlierThan(this DateTimeOffset dateTimeOffset, DateTimeOffset dateTimeOffset2)

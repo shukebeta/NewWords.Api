@@ -22,7 +22,7 @@ public class ConfigurationService(IConfiguration configuration) : IConfiguration
             ApiKey = a.ApiKey
         }))
         .ToList();
-    
+
     /// <summary>
     /// Gets the language name based on the provided language code.
     /// Optimized with dictionary lookup for better performance.
@@ -35,7 +35,7 @@ public class ConfigurationService(IConfiguration configuration) : IConfiguration
             return null;
 
         _languageLookup ??= SupportedLanguages.ToDictionary(l => l.Code, l => l.Name);
-        
+
         return _languageLookup.GetValueOrDefault(code);
     }
 

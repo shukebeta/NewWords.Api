@@ -1,6 +1,6 @@
 namespace Api.Framework.Result;
 
-public class SuccessfulResult<T>: ApiResult<T>
+public class SuccessfulResult<T> : ApiResult<T>
 {
     public SuccessfulResult(T data, string? message = null)
     {

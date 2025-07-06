@@ -122,10 +122,10 @@ namespace NewWords.Api.Controllers
             }
 
             var stories = await storyService.GenerateStoryWithWordsAsync(
-                userId, 
-                request?.Words, 
+                userId,
+                request?.Words,
                 request?.LearningLanguage);
-            
+
             if (stories.Count == 0)
             {
                 throw new Exception("Unable to generate stories. Please ensure you have recent vocabulary words or provide custom words.");
