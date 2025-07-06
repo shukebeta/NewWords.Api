@@ -18,6 +18,7 @@ namespace NewWords.Api.Services
         ILogger<VocabularyService> logger,
         IRepositoryBase<WordCollection> wordCollectionRepository,
         IRepositoryBase<WordExplanation> wordExplanationRepository,
+        IRepositoryBase<QueryHistory> queryHistoryRepository,
         IUserWordRepository userWordRepository)
         : IVocabularyService
     {
@@ -77,7 +78,7 @@ namespace NewWords.Api.Services
 
             if (userWord != null)
             {
-                await userWordRepository.DeleteAsync(userWord);
+                await _DeleteUserWordWithCleanup(userWord);
             }
             else
             {
@@ -174,6 +175,94 @@ namespace NewWords.Api.Services
                 UpdatedAt = currentTime
             };
             return await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
+        }
+
+        private async Task _DeleteUserWordWithCleanup(UserWord userWord)
+        {
+            try
+            {
+                await db.AsTenant().BeginTranAsync();
+                
+                // Delete the user word
+                await userWordRepository.DeleteAsync(userWord);
+                
+                // Perform cleanup check
+                await _CleanupOrphanedRecords(userWord.WordExplanationId);
+                
+                await db.AsTenant().CommitTranAsync();
+            }
+            catch (Exception ex)
+            {
+                await db.AsTenant().RollbackTranAsync();
+                logger.LogError(ex, $"Error in _DeleteUserWordWithCleanup for user {userWord.UserId}, wordExplanationId {userWord.WordExplanationId}: Rollback.");
+                throw;
+            }
+        }
+
+        private async Task _CleanupOrphanedRecords(long wordExplanationId)
+        {
+            const int cleanupThresholdMinutes = 5;
+            
+            // Get the word explanation
+            var wordExplanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
+            if (wordExplanation == null)
+            {
+                return;
+            }
+
+            // Check if any other users still reference this word explanation
+            var otherUserWordExists = await userWordRepository.GetFirstOrDefaultAsync(uw => uw.WordExplanationId == wordExplanationId);
+            if (otherUserWordExists != null)
+            {
+                // Other users still use this explanation, don't delete
+                return;
+            }
+
+            // Get the word collection
+            var wordCollection = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.Id == wordExplanation.WordCollectionId);
+            if (wordCollection == null)
+            {
+                // Word collection doesn't exist, just delete the explanation
+                await wordExplanationRepository.DeleteAsync(wordExplanation);
+                logger.LogInformation($"Cleaned up orphaned word explanation: {wordExplanation.WordText} (ID: {wordExplanationId})");
+                return;
+            }
+
+            // Check if both records were created within the threshold time
+            var timeDifferenceSeconds = Math.Abs(wordExplanation.CreatedAt - wordCollection.CreatedAt);
+            var timeDifferenceMinutes = timeDifferenceSeconds / 60.0;
+
+            if (timeDifferenceMinutes <= cleanupThresholdMinutes)
+            {
+                // Check if any other word explanations reference this word collection
+                var otherExplanationExists = await wordExplanationRepository.GetFirstOrDefaultAsync(we => 
+                    we.WordCollectionId == wordCollection.Id && we.Id != wordExplanationId);
+
+                if (otherExplanationExists == null)
+                {
+                    // No other explanations reference this collection, safe to delete both
+                    await wordExplanationRepository.DeleteAsync(wordExplanation);
+                    await _CleanupQueryHistory(wordCollection.Id);
+                    await wordCollectionRepository.DeleteAsync(wordCollection);
+                    logger.LogInformation($"Cleaned up orphaned word collection, explanation, and query history: {wordCollection.WordText} (Collection ID: {wordCollection.Id}, Explanation ID: {wordExplanationId})");
+                }
+                else
+                {
+                    // Other explanations exist for this collection, only delete the explanation
+                    await wordExplanationRepository.DeleteAsync(wordExplanation);
+                    logger.LogInformation($"Cleaned up orphaned word explanation: {wordExplanation.WordText} (ID: {wordExplanationId})");
+                }
+            }
+        }
+
+        private async Task _CleanupQueryHistory(long wordCollectionId)
+        {
+            var deletedCount = await queryHistoryRepository.DeleteReturnRowsAsync(qh => qh.WordCollectionId == wordCollectionId);
+            
+            if (deletedCount > 0)
+            {
+                logger.LogInformation($"Cleaned up {deletedCount} query history records for word collection ID: {wordCollectionId}");
+            }
         }
     }
 }
