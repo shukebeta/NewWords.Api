@@ -89,5 +89,42 @@ namespace NewWords.Api.Controllers
             var refreshedExplanation = await vocabularyService.RefreshUserWordExplanationAsync(wordExplanationId);
             return new SuccessfulResult<WordExplanation>(refreshedExplanation);
         }
+
+        /// <summary>
+        /// Retrieves vocabulary memories from various days ago (3 days, 1 week, 2 weeks, etc.) for spaced repetition.
+        /// </summary>
+        /// <param name="localTimezone">The user's local timezone (e.g., "America/New_York").</param>
+        /// <returns>List of word explanations from memory dates.</returns>
+        [HttpGet]
+        public async Task<ApiResult<List<WordExplanation>>> Memories(string localTimezone)
+        {
+            var userId = currentUser.Id;
+            if (userId == 0)
+            {
+                throw new ArgumentException("User not authenticated or ID not found.");
+            }
+
+            var memories = await vocabularyService.MemoriesAsync(userId, localTimezone);
+            return new SuccessfulResult<List<WordExplanation>>(memories.ToList());
+        }
+
+        /// <summary>
+        /// Retrieves all vocabulary words learned on a specific date.
+        /// </summary>
+        /// <param name="localTimezone">The user's local timezone (e.g., "America/New_York").</param>
+        /// <param name="yyyyMMdd">The date in YYYYMMDD format (e.g., "20240115").</param>
+        /// <returns>List of word explanations from the specified date.</returns>
+        [HttpGet]
+        public async Task<ApiResult<List<WordExplanation>>> MemoriesOn(string localTimezone, string yyyyMMdd)
+        {
+            var userId = currentUser.Id;
+            if (userId == 0)
+            {
+                throw new ArgumentException("User not authenticated or ID not found.");
+            }
+
+            var memories = await vocabularyService.MemoriesOnAsync(userId, localTimezone, yyyyMMdd);
+            return new SuccessfulResult<List<WordExplanation>>(memories.ToList());
+        }
     }
 }

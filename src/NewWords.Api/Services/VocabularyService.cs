@@ -8,6 +8,7 @@ using LLM;
 using LLM.Models;
 using LLM.Services;
 using NewWords.Api.Services.interfaces;
+using System.Globalization;
 
 namespace NewWords.Api.Services
 {
@@ -58,9 +59,12 @@ namespace NewWords.Api.Services
                 var explanation = await _HandleExplanation(wordText, learningLanguageCode, explanationLanguageCode, wordCollectionId);
 
                 // 3. Handle UserWord
-                await _HandleUserWord(userId, explanation);
+                var userWord = await _HandleUserWord(userId, explanation);
 
                 await db.AsTenant().CommitTranAsync();
+
+                // Override CreatedAt with user's timestamp (when they learned the word)
+                explanation.CreatedAt = userWord.CreatedAt;
                 return explanation;
             }
             catch (Exception ex) // Catch exceptions from UseTranAsync or input validation
@@ -147,7 +151,57 @@ namespace NewWords.Api.Services
             return explanation;
         }
 
-        private async Task _HandleUserWord(int userId, WordExplanation explanationToReturn)
+        public async Task<IList<WordExplanation>> MemoriesAsync(int userId, string localTimezone)
+        {
+            var earliest = await userWordRepository.GetFirstOrDefaultAsync(uw => uw.UserId == userId, "CreatedAt");
+            if (earliest == null) return new List<WordExplanation>();
+
+            var memories = new List<WordExplanation>();
+            var timestampList = _GetTimestamps(earliest.CreatedAt, localTimezone);
+
+            foreach (var timestamp in timestampList)
+            {
+                var wordExplanation = await db.Queryable<WordExplanation>()
+                    .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
+                    .Where((we, uw) => uw.UserId == userId && uw.CreatedAt >= timestamp && uw.CreatedAt < timestamp + 86400)
+                    .OrderBy((we, uw) => uw.CreatedAt)
+                    .Select((we, uw) => new WordExplanation()
+                    {
+                        CreatedAt = uw.CreatedAt,
+                    }, true)
+                    .FirstAsync();
+
+                if (wordExplanation != null)
+                {
+                    memories.Add(wordExplanation);
+                }
+            }
+
+            return memories;
+        }
+
+        public async Task<IList<WordExplanation>> MemoriesOnAsync(int userId, string localTimezone, string yyyyMMdd)
+        {
+            // Get the specified time zone
+            TimeZoneInfo timeZone = TimeZoneInfo.FindSystemTimeZoneById(localTimezone);
+            // Parse the date string to a DateTime object
+            var dayStartTimestamp = DateTimeOffset.ParseExact(yyyyMMdd, "yyyyMMdd", CultureInfo.InvariantCulture)
+                .GetDayStartTimestamp(timeZone);
+
+            var words = await db.Queryable<WordExplanation>()
+                .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
+                .Where((we, uw) => uw.UserId == userId && uw.CreatedAt >= dayStartTimestamp && uw.CreatedAt < dayStartTimestamp + 86400)
+                .OrderBy((we, uw) => uw.CreatedAt)
+                .Select((we, uw) => new WordExplanation()
+                {
+                    CreatedAt = uw.CreatedAt,
+                }, true)
+                .ToListAsync();
+
+            return words;
+        }
+
+        private async Task<UserWord> _HandleUserWord(int userId, WordExplanation explanationToReturn)
         {
             var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
                 uw.UserId == userId && uw.WordExplanationId == explanationToReturn.Id);
@@ -162,7 +216,10 @@ namespace NewWords.Api.Services
                     CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
                 };
                 await userWordRepository.InsertAsync(newUserWord);
+                return newUserWord;
             }
+
+            return userWord;
         }
 
         private async Task<WordExplanation> _HandleExplanation(string wordText, string learningLanguageCode, string explanationLanguageCode,
@@ -324,6 +381,35 @@ namespace NewWords.Api.Services
             {
                 logger.LogInformation($"Cleaned up {deletedCount} query history records for word collection ID: {wordCollectionId}");
             }
+        }
+
+        private static long[] _GetTimestamps(long initialUnixTimestamp, string timeZoneId)
+        {
+            var targetTimeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            var startDate = initialUnixTimestamp.ToDateTimeOffset(targetTimeZone);
+            var today = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, targetTimeZone);
+
+            var timestamps = new List<long>();
+
+            // Add spaced repetition intervals optimized for vocabulary learning
+            var dayIntervals = new[] { 3, 7, 14, 30, 60, 90, 180, 365 }; // 3 days, 1 week, 2 weeks, 1 month, 2 months, 3 months, 6 months, 1 year
+
+            foreach (var daysAgo in dayIntervals)
+            {
+                var targetDate = today.AddDays(-daysAgo);
+
+                // Only include if the target date is after the user started using the app
+                if (targetDate >= startDate)
+                {
+                    timestamps.Add(targetDate.GetDayStartTimestamp(targetTimeZone));
+                }
+            }
+
+            // Always add yesterday and today
+            timestamps.Add(today.AddDays(-1).GetDayStartTimestamp(targetTimeZone));
+            timestamps.Add(today.GetDayStartTimestamp(targetTimeZone));
+
+            return timestamps.OrderBy(t => t).ToArray();
         }
     }
 }
