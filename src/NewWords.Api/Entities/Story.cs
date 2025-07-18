@@ -39,9 +39,10 @@ namespace NewWords.Api.Entities
         public string LearningLanguage { get; set; } = string.Empty;
 
         /// <summary>
-        /// Unix timestamp when the user first read this story (NULL = unread).
+        /// Unix timestamp when the current user first read this story (NULL = unread).
+        /// This is a computed property populated from UserStoryReads table.
         /// </summary>
-        [SugarColumn(IsNullable = true)]
+        [SugarColumn(IsIgnore = true)]
         public long? FirstReadAt { get; set; }
 
         /// <summary>

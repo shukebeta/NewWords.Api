@@ -21,6 +21,7 @@ public static class ServiceExtensions
         services.AddSingleton<IUserWordRepository, UserWordRepository>();
         services.AddSingleton<IUserRepository, UserRepository>();
         services.AddSingleton<IUserService, UserService>();
+        services.AddSingleton<IAccountService, AccountService>();
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<IVocabularyService, VocabularyService>();

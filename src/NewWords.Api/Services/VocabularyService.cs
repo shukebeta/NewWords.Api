@@ -392,7 +392,7 @@ namespace NewWords.Api.Services
             var timestamps = new List<long>();
 
             // Add spaced repetition intervals optimized for vocabulary learning
-            var dayIntervals = new[] { 3, 7, 14, 30, 60, 90, 180, 365 }; // 3 days, 1 week, 2 weeks, 1 month, 2 months, 3 months, 6 months, 1 year
+            var dayIntervals = new[] { 0, 1, 3, 7, 14, 30, 60, 90, 180, 365 }; // today, yesterday, 3 days, 1 week, 2 weeks, 1 month, 2 months, 3 months, 6 months, 1 year
 
             foreach (var daysAgo in dayIntervals)
             {
@@ -405,9 +405,7 @@ namespace NewWords.Api.Services
                 }
             }
 
-            // Always add yesterday and today
-            timestamps.Add(today.AddDays(-1).GetDayStartTimestamp(targetTimeZone));
-            timestamps.Add(today.GetDayStartTimestamp(targetTimeZone));
+            // Note: today and yesterday are now included in dayIntervals with proper filtering
 
             return timestamps.OrderBy(t => t).ToArray();
         }

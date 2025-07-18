@@ -1,6 +1,14 @@
-# WordCollection Language Field Removal Migration
+# Database Migration Scripts
 
+This directory contains all database migration scripts for the NewWords.Api project.
+
+## Migration History
+
+### 01-03: WordCollection Language Field Removal Migration
 This migration removes the `Language` field from the `WordCollection` table to simplify the architecture and eliminate language detection ambiguity.
+
+### 04-05: Per-User Story Read Tracking Migration  
+This migration implements per-user read tracking for stories, fixing the issue where `Stories.FirstReadAt` was story-level instead of per-user.
 
 ## Migration Steps
 
@@ -81,7 +89,7 @@ If you need to rollback:
 
 ## Testing Checklist
 
-After migration:
+After WordCollection migration:
 - [ ] Can add new words via API
 - [ ] Word explanations generate correctly
 - [ ] `QueryCount` increments properly
@@ -89,3 +97,70 @@ After migration:
 - [ ] `WordExplanations` foreign keys are valid
 - [ ] Bulk explanation generation works (`FillWordExplanationsTable`)
 - [ ] Duplicate records permanently removed
+
+---
+
+## Per-User Story Read Tracking Migration (04-05)
+
+### Overview
+Fixes the design issue where `Stories.FirstReadAt` was story-level instead of per-user, preventing proper read tracking when users discover stories created by others.
+
+### Migration Steps
+
+#### Phase 1: Create Infrastructure & Migrate Data
+1. **Run migration script:**
+   ```sql
+   source 04_user_story_reads_migration.sql
+   ```
+   - Creates `UserStoryReads` table with proper indexes (re-runnable)
+   - Migrates existing `Stories.FirstReadAt` data to preserve read status
+   - Skips duplicate entries if script is run multiple times
+   - Verifies migration completed successfully
+
+#### Phase 2: Code Deployment  
+2. **Deploy updated codebase:**
+   - Updated service layer with optimized SqlSugar joins
+   - Removed ownership restriction from `MarkStoryAsReadAsync`
+   - `Story.FirstReadAt` becomes computed property (user-context-aware)
+
+#### Phase 3: Schema Cleanup (Optional)
+3. **Run cleanup script after verification:**
+   ```sql
+   source 05_cleanup_stories_firstreadat.sql
+   ```
+   - **Optional:** Removes old `FirstReadAt` column from `Stories` table (re-runnable)
+   - Safely checks if column exists before dropping
+   - Run only after confirming everything works correctly
+
+### Key Changes
+
+#### Database Schema:
+- **Before:** `Stories.FirstReadAt` (story-level, single timestamp)
+- **After:** `UserStoryReads` table (per-user read tracking)
+
+#### API Behavior:
+- **Before:** `MarkStoryAsReadAsync` only worked for story owners
+- **After:** Any user can mark any story as read
+- **Frontend:** Zero changes needed - API contracts unchanged
+
+#### Performance:
+- **Before:** N+1 queries in `ConvertToStoryDtosAsync`
+- **After:** Single query with LEFT JOINs for favorites and read status
+
+### Benefits
+
+1. **Proper Read Tracking:** Users can read stories from Story Square
+2. **Zero Frontend Changes:** `StoryDto.FirstReadAt` still works as expected  
+3. **Better Performance:** Single optimized query instead of multiple lookups
+4. **Data Preservation:** All existing read data migrated safely
+
+### Testing Checklist
+
+After migration:
+- [ ] Story Square shows stories from other users
+- [ ] Users can mark any story as read (not just their own)
+- [ ] Read status persists correctly per user
+- [ ] Stories show proper read status in all endpoints
+- [ ] Favorite functionality still works
+- [ ] Migration preserved all existing read data
+- [ ] Performance improved (check query execution plans)

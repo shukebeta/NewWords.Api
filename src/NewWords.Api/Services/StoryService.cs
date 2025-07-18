@@ -16,18 +16,32 @@ namespace NewWords.Api.Services
         ILogger<StoryService> logger,
         IRepositoryBase<Story> storyRepository,
         IRepositoryBase<StoryWord> storyWordRepository,
-        IRepositoryBase<UserFavoriteStory> userFavoriteStoryRepository)
+        IRepositoryBase<UserFavoriteStory> userFavoriteStoryRepository,
+        IRepositoryBase<UserStoryRead> userStoryReadRepository)
         : IStoryService
     {
         public async Task<PageData<StoryDto>> GetUserStoriesAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
-            var pagedStories = await db.Queryable<Story>()
+            var storyDtos = await db.Queryable<Story>()
+                .LeftJoin<UserFavoriteStory>((s, ufs) => s.Id == ufs.StoryId && ufs.UserId == userId)
+                .LeftJoin<UserStoryRead>((s, ufs, usr) => s.Id == usr.StoryId && usr.UserId == userId)
                 .Where(s => s.UserId == userId)
                 .OrderBy(s => s.CreatedAt, OrderByType.Desc)
+                .Select((s, ufs, usr) => new StoryDto
+                {
+                    Id = s.Id,
+                    UserId = s.UserId,
+                    Content = s.Content,
+                    StoryWords = s.StoryWords,
+                    LearningLanguage = s.LearningLanguage,
+                    FirstReadAt = usr.Id != null ? usr.FirstReadAt : (long?)null,
+                    FavoriteCount = s.FavoriteCount,
+                    IsFavorited = ufs.Id != null,
+                    ProviderModelName = s.ProviderModelName,
+                    CreatedAt = s.CreatedAt
+                })
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
-
-            var storyDtos = await ConvertToStoryDtosAsync(pagedStories, userId);
 
             return new PageData<StoryDto>
             {
@@ -41,13 +55,26 @@ namespace NewWords.Api.Services
         public async Task<PageData<StoryDto>> GetStorySquareAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
-            var pagedStories = await db.Queryable<Story>()
+            var storyDtos = await db.Queryable<Story>()
+                .LeftJoin<UserFavoriteStory>((s, ufs) => s.Id == ufs.StoryId && ufs.UserId == userId)
+                .LeftJoin<UserStoryRead>((s, ufs, usr) => s.Id == usr.StoryId && usr.UserId == userId)
                 .Where(s => s.UserId != userId)
                 .OrderBy(s => s.FavoriteCount, OrderByType.Desc)
                 .OrderBy(s => s.CreatedAt, OrderByType.Desc)
+                .Select((s, ufs, usr) => new StoryDto
+                {
+                    Id = s.Id,
+                    UserId = s.UserId,
+                    Content = s.Content,
+                    StoryWords = s.StoryWords,
+                    LearningLanguage = s.LearningLanguage,
+                    FirstReadAt = usr.Id != null ? usr.FirstReadAt : (long?)null,
+                    FavoriteCount = s.FavoriteCount,
+                    IsFavorited = ufs.Id != null,
+                    ProviderModelName = s.ProviderModelName,
+                    CreatedAt = s.CreatedAt
+                })
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
-
-            var storyDtos = await ConvertToStoryDtosAsync(pagedStories, userId);
 
             return new PageData<StoryDto>
             {
@@ -61,14 +88,25 @@ namespace NewWords.Api.Services
         public async Task<PageData<StoryDto>> GetUserFavoriteStoriesAsync(int userId, int pageSize, int pageNumber)
         {
             RefAsync<int> totalCount = 0;
-            var pagedStories = await db.Queryable<Story>()
+            var storyDtos = await db.Queryable<Story>()
                 .InnerJoin<UserFavoriteStory>((s, ufs) => s.Id == ufs.StoryId)
+                .LeftJoin<UserStoryRead>((s, ufs, usr) => s.Id == usr.StoryId && usr.UserId == userId)
                 .Where((s, ufs) => ufs.UserId == userId)
                 .OrderBy((s, ufs) => ufs.CreatedAt, OrderByType.Desc)
-                .Select((s, ufs) => s)
+                .Select((s, ufs, usr) => new StoryDto
+                {
+                    Id = s.Id,
+                    UserId = s.UserId,
+                    Content = s.Content,
+                    StoryWords = s.StoryWords,
+                    LearningLanguage = s.LearningLanguage,
+                    FirstReadAt = usr.Id != null ? usr.FirstReadAt : (long?)null,
+                    FavoriteCount = s.FavoriteCount,
+                    IsFavorited = true, // Always true since we're querying user's favorites
+                    ProviderModelName = s.ProviderModelName,
+                    CreatedAt = s.CreatedAt
+                })
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
-
-            var storyDtos = await ConvertToStoryDtosAsync(pagedStories, userId);
 
             return new PageData<StoryDto>
             {
@@ -81,17 +119,29 @@ namespace NewWords.Api.Services
 
         public async Task MarkStoryAsReadAsync(int userId, long storyId)
         {
-            var story = await storyRepository.GetFirstOrDefaultAsync(s => s.Id == storyId && s.UserId == userId);
+            // Check if story exists (remove ownership restriction)
+            var story = await storyRepository.GetFirstOrDefaultAsync(s => s.Id == storyId);
             if (story == null)
             {
-                logger.LogWarning($"Story not found or not owned by user - StoryId: {storyId}, UserId: {userId}");
+                logger.LogWarning($"Story not found - StoryId: {storyId}");
                 return;
             }
 
-            if (story.FirstReadAt == null)
+            // Check if user has already read this story
+            var existingRead = await userStoryReadRepository.GetFirstOrDefaultAsync(
+                usr => usr.UserId == userId && usr.StoryId == storyId);
+
+            if (existingRead == null)
             {
-                story.FirstReadAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                await storyRepository.UpdateAsync(story);
+                // Create new read record
+                var userStoryRead = new UserStoryRead
+                {
+                    UserId = userId,
+                    StoryId = storyId,
+                    FirstReadAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                };
+                
+                await userStoryReadRepository.InsertAsync(userStoryRead);
                 logger.LogInformation($"Story marked as read - StoryId: {storyId}, UserId: {userId}");
             }
         }
@@ -564,35 +614,6 @@ namespace NewWords.Api.Services
             }
         }
 
-        private async Task<List<StoryDto>> ConvertToStoryDtosAsync(List<Story> stories, int currentUserId)
-        {
-            if (!stories.Any())
-                return new List<StoryDto>();
-
-            // Get all story IDs for batch favorite lookup
-            var storyIds = stories.Select(s => s.Id).ToList();
-
-            // Batch query for user's favorites
-            var userFavorites = await userFavoriteStoryRepository
-                .GetListAsync(ufs => ufs.UserId == currentUserId && storyIds.Contains(ufs.StoryId));
-
-            var favoriteStoryIds = userFavorites.Select(ufs => ufs.StoryId).ToHashSet();
-
-            // Convert to DTOs with favorite status
-            return stories.Select(story => new StoryDto
-            {
-                Id = story.Id,
-                UserId = story.UserId,
-                Content = story.Content,
-                StoryWords = story.StoryWords,
-                LearningLanguage = story.LearningLanguage,
-                FirstReadAt = story.FirstReadAt,
-                FavoriteCount = story.FavoriteCount,
-                IsFavorited = favoriteStoryIds.Contains(story.Id),
-                ProviderModelName = story.ProviderModelName,
-                CreatedAt = story.CreatedAt
-            }).ToList();
-        }
 
         private async Task SaveStoryWordsAsync(long storyId, List<WordCollection> words)
         {
