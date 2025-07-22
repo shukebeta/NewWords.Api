@@ -26,6 +26,8 @@ public static class ServiceExtensions
         services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<IVocabularyService, VocabularyService>();
         services.AddSingleton<IStoryService, StoryService>();
+        services.AddSingleton<IGooglePlayBillingService, GooglePlayBillingService>();
+        services.AddSingleton<ISubscriptionService, SubscriptionService>();
         services.AddHostedService<StoryGenerationBackgroundService>();
     }
 }

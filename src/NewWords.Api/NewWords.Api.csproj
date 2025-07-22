@@ -18,6 +18,8 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.4.0" />
     <PackageReference Include="SqlSugarCore" Version="5.1.4.189" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="Google.Apis.AndroidPublisher.v3" Version="1.68.0.3422" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
     <ProjectReference Include="..\Api.Framework\Api.Framework.csproj" />
     <ProjectReference Include="..\LLM\LLM.csproj" />
   </ItemGroup>
