@@ -256,21 +256,33 @@ public class LanguageService(IConfigurationService configurationService) : ILang
                                 CRITICAL FORMATTING RULES:
                                 1. User target words: MUST use __word__ (explanation in {nativeLanguageName})
                                 2. Complex words YOU add: MUST use **word** (explanation in {nativeLanguageName})  
-                                3. NEVER mix these formats. User words get __, your words get **
+                                3. NEVER mix these formats.
                                 4. ALL explanations MUST be in the user's native language: {nativeLanguageName}
 
-                                EXAMPLE: If user gives "negotiate, deadline":
-                                "The __deadline__ (截止日期) was approaching, so Maya had to __negotiate__ (协商) with her **supervisor** (主管) about the **budget** (预算)."
+                                PHRASE HANDLING RULES:
+                                1. Multi-word phrases (like "go off", "look up") are SINGLE UNITS - never split them
+                                2. Highlight ALL inflected forms: if user gives "go off", also highlight "went off", "going off", "goes off"
+                                3. Apply same logic to all phrasal verbs and multi-word expressions
+                                4. Each variation needs proper formatting and explanation
+
+                                CROSS-LANGUAGE WORD HANDLING:
+                                5. If user provides words in {nativeLanguageName} or other non-{languageName} languages, translate them to {languageName} equivalents
+                                6. Use the {languageName} translation in the story, but explain the original word in parentheses
+                                7. Example: If user gives "狗" (Chinese for dog), write "The __dog__ (狗)" not "The __狗__"
+                                8. This helps users learn proper {languageName} vocabulary while connecting to familiar concepts
+
+                                EXAMPLE: If user gives "negotiate, deadline, go off":
+                                "The __deadline__ (截止日期) was approaching, so Maya had to __negotiate__ (协商) with her **supervisor** (主管). The alarm __went off__ (响起) at 6 AM."
 
                                 REQUIREMENTS:
-                                - Write ~350 words in {languageName}
+                                - Write 150-250 words in {languageName} (keep it concise and engaging)
                                 - MANDATORY: Every underline word MUST have (explanation in {nativeLanguageName}) 
                                 - MANDATORY: Every bold word MUST have (explanation in {nativeLanguageName})
                                 - Add at least 3-5 complex words with bold formatting
                                 - Output ONLY the story, no extra text
 
-                                WRONG: "__Saturday__ Emily went hiking"
-                                CORRECT: "__Saturday__ (星期六) Emily went **hiking** (远足)"
+                                WRONG: "__Saturday__ Emily went hiking" or "The alarm __went__ __off__"
+                                CORRECT: "__Saturday__ (星期六) Emily went **hiking** (远足)" or "The alarm __went off__ (响起)"
                                 """;
 
             // Build the request body
