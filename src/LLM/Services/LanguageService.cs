@@ -266,10 +266,12 @@ public class LanguageService(IConfigurationService configurationService) : ILang
                                 4. Each variation needs proper formatting and explanation
 
                                 CROSS-LANGUAGE WORD HANDLING:
-                                5. If user provides words in {nativeLanguageName} or other non-{languageName} languages, translate them to {languageName} equivalents
-                                6. Use the {languageName} translation in the story, but explain the original word in parentheses
-                                7. Example: If user gives "狗" (Chinese for dog), write "The __dog__ (狗)" not "The __狗__"
-                                8. This helps users learn proper {languageName} vocabulary while connecting to familiar concepts
+                                5. If user provides words in {nativeLanguageName} or other non-{languageName} languages, ALWAYS translate them to {languageName} equivalents first
+                                6. NEVER insert non-{languageName} words directly into the {languageName} story text
+                                7. Format: __[{languageName}_word]__ ([original_word])
+                                8. Example: If user gives "梳理", write "The team decided to __organize__ (梳理) their thoughts"
+                                9. WRONG: "The team decided to 梳理 (organize) their thoughts"
+                                10. This maintains {languageName} story flow while teaching proper vocabulary
 
                                 EXAMPLE: If user gives "negotiate, deadline, go off":
                                 "The __deadline__ (截止日期) was approaching, so Maya had to __negotiate__ (协商) with her **supervisor** (主管). The alarm __went off__ (响起) at 6 AM."
