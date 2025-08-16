@@ -17,7 +17,6 @@ namespace NewWords.Api.Controllers;
 [Authorize]
 public class LlmController(
     ILanguageService languageService,
-    IConfigurationService configService,
     ISqlSugarClient dbClient,
     ILogger<LlmController> logger)
     : BaseController

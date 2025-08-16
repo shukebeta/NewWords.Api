@@ -20,8 +20,19 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="Google.Apis.AndroidPublisher.v3" Version="1.68.0.3422" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
+    <PackageReference Include="NLog.Web.AspNetCore" Version="5.3.9" />
+    <PackageReference Include="NLog.Targets.Seq" Version="4.0.0" />
     <ProjectReference Include="..\Api.Framework\Api.Framework.csproj" />
     <ProjectReference Include="..\LLM\LLM.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="appsettings.Local.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

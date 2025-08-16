@@ -35,9 +35,9 @@ namespace NewWords.Api.Services
                     Content = s.Content,
                     StoryWords = s.StoryWords,
                     LearningLanguage = s.LearningLanguage,
-                    FirstReadAt = usr.Id != null ? usr.FirstReadAt : (long?)null,
+                    FirstReadAt = usr.Id != 0 ? usr.FirstReadAt : (long?)null,
                     FavoriteCount = s.FavoriteCount,
-                    IsFavorited = ufs.Id != null,
+                    IsFavorited = ufs.Id != 0,
                     ProviderModelName = s.ProviderModelName,
                     CreatedAt = s.CreatedAt
                 })
@@ -68,9 +68,9 @@ namespace NewWords.Api.Services
                     Content = s.Content,
                     StoryWords = s.StoryWords,
                     LearningLanguage = s.LearningLanguage,
-                    FirstReadAt = usr.Id != null ? usr.FirstReadAt : (long?)null,
+                    FirstReadAt = usr.Id != 0 ? usr.FirstReadAt : (long?)null,
                     FavoriteCount = s.FavoriteCount,
-                    IsFavorited = ufs.Id != null,
+                    IsFavorited = ufs.Id != 0,
                     ProviderModelName = s.ProviderModelName,
                     CreatedAt = s.CreatedAt
                 })
@@ -100,7 +100,7 @@ namespace NewWords.Api.Services
                     Content = s.Content,
                     StoryWords = s.StoryWords,
                     LearningLanguage = s.LearningLanguage,
-                    FirstReadAt = usr.Id != null ? usr.FirstReadAt : (long?)null,
+                    FirstReadAt = usr.Id != 0 ? usr.FirstReadAt : (long?)null,
                     FavoriteCount = s.FavoriteCount,
                     IsFavorited = true, // Always true since we're querying user's favorites
                     ProviderModelName = s.ProviderModelName,
