@@ -52,13 +52,44 @@ namespace NewWords.Api.Services
             try
             {
                 await db.AsTenant().BeginTranAsync();
-                // 1. Handle WordCollection
-                var wordCollectionId = await _HandleWordCollection(wordText);
 
-                // 2. Handle WordExplanation (Explanation Cache)
-                var explanation = await _HandleExplanation(wordText, learningLanguageCode, explanationLanguageCode, wordCollectionId);
+                // 1. First check if there is a local explanation (check both original and canonical word)
+                var wordTextTrimmed = wordText.Trim();
+                var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
+                var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
 
-                // 3. Handle UserWord
+                // 2. Then check if there is a local explanation (original word)
+                var localWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == wordTextTrimmed && wc.DeletedAt == null);
+                WordExplanation? explanation = null;
+                long wordCollectionId = 0;
+                string canonicalWord = wordTextTrimmed;
+
+                if (localWord != null)
+                {
+                    explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
+                        we.WordCollectionId == localWord.Id &&
+                        we.LearningLanguage == learningLanguageCode &&
+                        we.ExplanationLanguage == explanationLanguageCode);
+                    if (explanation != null)
+                    {
+                        wordCollectionId = localWord.Id;
+                    }
+                }
+
+                // 3. 如果本地没有解释，调用AI，提取标准词
+                if (explanation == null)
+                {
+                    var aiResult = await languageService.GetMarkdownExplanationWithFallbackAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
+                    if (!aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
+                    {
+                        throw new Exception($"Failed to get explanation from AI: {aiResult.ErrorMessage ?? "AI returned empty markdown."}");
+                    }
+                    canonicalWord = ExtractCanonicalWordFromMarkdown(aiResult.Markdown);
+                    wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
+                    explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId);
+                }
+
+                // 4. Handle UserWord
                 var userWord = await _HandleUserWord(userId, explanation);
 
                 await db.AsTenant().CommitTranAsync();
@@ -73,6 +104,22 @@ namespace NewWords.Api.Services
                 logger.LogError(ex, $"Error in AddUserWordAsync for user {userId}, word '{wordText}': Rollback.");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Extract the canonical word from the first line of AI markdown (e.g. "**apple**" -> "apple")
+        /// </summary>
+        private string ExtractCanonicalWordFromMarkdown(string markdown)
+        {
+            if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+            var firstLine = markdown.Split('\n').FirstOrDefault();
+            if (firstLine != null && firstLine.StartsWith("**"))
+            {
+                var trimmed = firstLine.Trim('*', ' ', '\r');
+                var idx = trimmed.IndexOf(' ');
+                return idx > 0 ? trimmed.Substring(0, idx) : trimmed;
+            }
+            return markdown.Trim();
         }
 
         public async Task DelUserWordAsync(int userId, long wordExplanationId)
@@ -261,26 +308,61 @@ namespace NewWords.Api.Services
             return explanation;
         }
 
-        private async Task<long> _HandleWordCollection(string wordText)
+        /// <summary>
+        /// 处理单词规范化：如果AI纠正了用户输入，确保WordCollection只保留标准词。
+        /// </summary>
+        /// <param name="userInput">用户原始输入</param>
+        /// <param name="canonicalWord">AI返回的标准词</param>
+        /// <returns>标准词的WordCollection.Id</returns>
+        private async Task<long> EnsureCanonicalWordAsync(string userInput, string canonicalWord)
         {
             var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
-            wordText = wordText.Trim();
+            userInput = userInput.Trim();
+            canonicalWord = canonicalWord.Trim();
 
-            // Try to find existing word (language-agnostic)
-            var existingWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc =>
-                wc.WordText == wordText);
+            // 查找错词和标准词
+            var wrongEntry = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == userInput && wc.DeletedAt == null);
+            var correctEntry = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == canonicalWord && wc.DeletedAt == null);
 
-            if (existingWord == null)
+            if (correctEntry != null)
             {
-                // Create new word record
-                return await _AddWordCollection(wordText, currentTime);
+                // Canonical word exists, soft-delete the typo entry
+                if (wrongEntry != null && wrongEntry.WordText != canonicalWord)
+                {
+                    wrongEntry.DeletedAt = currentTime;
+                    await wordCollectionRepository.UpdateAsync(wrongEntry);
+                }
+                return correctEntry.Id;
             }
+            else if (wrongEntry != null && wrongEntry.WordText != canonicalWord)
+            {
+                // Canonical word does not exist, update typo entry to canonical word
+                wrongEntry.WordText = canonicalWord;
+                wrongEntry.UpdatedAt = currentTime;
+                await wordCollectionRepository.UpdateAsync(wrongEntry);
+                return wrongEntry.Id;
+            }
+            else if (wrongEntry != null)
+            {
+                // User input is already the canonical word
+                wrongEntry.QueryCount++;
+                wrongEntry.UpdatedAt = currentTime;
+                await wordCollectionRepository.UpdateAsync(wrongEntry);
+                return wrongEntry.Id;
+            }
+            else
+            {
+                // 两者都不存在，插入标准词
+                return await _AddWordCollection(canonicalWord, currentTime);
+            }
+        }
 
-            // Update existing word
-            existingWord.QueryCount++;
-            existingWord.UpdatedAt = currentTime;
-            await wordCollectionRepository.UpdateAsync(existingWord);
-            return existingWord.Id;
+        // Modified original _HandleWordCollection, added canonicalWord parameter
+        private async Task<long> _HandleWordCollection(string userInput, string canonicalWord = null)
+        {
+            // If canonicalWord is not specified, default to userInput
+            canonicalWord ??= userInput;
+            return await EnsureCanonicalWordAsync(userInput, canonicalWord);
         }
 
         private async Task<long> _AddWordCollection(string wordText, long currentTime)
