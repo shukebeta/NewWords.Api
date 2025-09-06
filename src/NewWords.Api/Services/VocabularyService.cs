@@ -52,11 +52,15 @@ namespace NewWords.Api.Services
             try
             {
                 await db.AsTenant().BeginTranAsync();
-                // 1. Handle WordCollection
-                var wordCollectionId = await _HandleWordCollection(wordText);
+
+                // 1. 先用AI纠正单词（如有必要）
+                // 这里假设调用AI服务获取标准词，实际项目应在Controller或Service上层先拿到AI结果
+                // 这里演示：先用原始输入查本地解释，若无则调用AI
+                var canonicalWord = wordText;
+                var wordCollectionId = await _HandleWordCollection(wordText, canonicalWord);
 
                 // 2. Handle WordExplanation (Explanation Cache)
-                var explanation = await _HandleExplanation(wordText, learningLanguageCode, explanationLanguageCode, wordCollectionId);
+                var explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId);
 
                 // 3. Handle UserWord
                 var userWord = await _HandleUserWord(userId, explanation);
@@ -261,26 +265,61 @@ namespace NewWords.Api.Services
             return explanation;
         }
 
-        private async Task<long> _HandleWordCollection(string wordText)
+        /// <summary>
+        /// 处理单词规范化：如果AI纠正了用户输入，确保WordCollection只保留标准词。
+        /// </summary>
+        /// <param name="userInput">用户原始输入</param>
+        /// <param name="canonicalWord">AI返回的标准词</param>
+        /// <returns>标准词的WordCollection.Id</returns>
+        private async Task<long> EnsureCanonicalWordAsync(string userInput, string canonicalWord)
         {
             var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
-            wordText = wordText.Trim();
+            userInput = userInput.Trim();
+            canonicalWord = canonicalWord.Trim();
 
-            // Try to find existing word (language-agnostic)
-            var existingWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc =>
-                wc.WordText == wordText);
+            // 查找错词和标准词
+            var wrongEntry = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == userInput && wc.DeletedAt == null);
+            var correctEntry = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == canonicalWord && wc.DeletedAt == null);
 
-            if (existingWord == null)
+            if (correctEntry != null)
             {
-                // Create new word record
-                return await _AddWordCollection(wordText, currentTime);
+                // 标准词已存在，软删除错词
+                if (wrongEntry != null && wrongEntry.WordText != canonicalWord)
+                {
+                    wrongEntry.DeletedAt = currentTime;
+                    await wordCollectionRepository.UpdateAsync(wrongEntry);
+                }
+                return correctEntry.Id;
             }
+            else if (wrongEntry != null && wrongEntry.WordText != canonicalWord)
+            {
+                // 标准词不存在，直接更新错词为标准词
+                wrongEntry.WordText = canonicalWord;
+                wrongEntry.UpdatedAt = currentTime;
+                await wordCollectionRepository.UpdateAsync(wrongEntry);
+                return wrongEntry.Id;
+            }
+            else if (wrongEntry != null)
+            {
+                // 用户输入本身就是标准词
+                wrongEntry.QueryCount++;
+                wrongEntry.UpdatedAt = currentTime;
+                await wordCollectionRepository.UpdateAsync(wrongEntry);
+                return wrongEntry.Id;
+            }
+            else
+            {
+                // 两者都不存在，插入标准词
+                return await _AddWordCollection(canonicalWord, currentTime);
+            }
+        }
 
-            // Update existing word
-            existingWord.QueryCount++;
-            existingWord.UpdatedAt = currentTime;
-            await wordCollectionRepository.UpdateAsync(existingWord);
-            return existingWord.Id;
+        // 修改原有_HandleWordCollection，增加canonicalWord参数
+        private async Task<long> _HandleWordCollection(string userInput, string canonicalWord = null)
+        {
+            // 若未指定canonicalWord，默认与userInput一致
+            canonicalWord ??= userInput;
+            return await EnsureCanonicalWordAsync(userInput, canonicalWord);
         }
 
         private async Task<long> _AddWordCollection(string wordText, long currentTime)
