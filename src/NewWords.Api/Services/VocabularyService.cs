@@ -115,9 +115,16 @@ namespace NewWords.Api.Services
             var firstLine = markdown.Split('\n').FirstOrDefault();
             if (firstLine != null && firstLine.StartsWith("**"))
             {
-                var trimmed = firstLine.Trim('*', ' ', '\r');
-                var idx = trimmed.IndexOf(' ');
-                return idx > 0 ? trimmed.Substring(0, idx) : trimmed;
+                // Extract the first bolded phrase (between ** and **) on the first line
+                int start = firstLine.IndexOf("**");
+                if (start != -1)
+                {
+                    int end = firstLine.IndexOf("**", start + 2);
+                    if (end != -1 && end > start + 2)
+                    {
+                        return firstLine.Substring(start + 2, end - (start + 2)).Trim();
+                    }
+                }
             }
             return markdown.Trim();
         }

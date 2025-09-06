@@ -101,5 +101,21 @@ namespace NewWords.Api.Tests.Services
             result.Should().Be(correctEntry.Id);
             _wordCollectionRepoMock.Verify(r => r.UpdateAsync(It.IsAny<WordCollection>()), Times.Never);
         }
+        [Theory]
+        [InlineData("**apple**", "apple")]
+        [InlineData("**take off** (phrasal verb)", "take off")]
+        [InlineData("apple", "apple")]
+        [InlineData("Some text **apple**", "Some text **apple**")]
+        [InlineData("", "")]
+        [InlineData("**run**\n**walk**", "run")]
+        [InlineData("**multi word phrase** - explanation", "multi word phrase")]
+        [InlineData("** spaced  phrase  **", "spaced  phrase")]
+        public void ExtractCanonicalWordFromMarkdown_HandlesVariousCases(string markdown, string expected)
+        {
+            var service = new VocabularyService(null, null, null, null, null, null, null, null);
+            var method = service.GetType().GetMethod("ExtractCanonicalWordFromMarkdown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var result = (string)method.Invoke(service, new object[] { markdown });
+            result.Should().Be(expected);
+        }
     }
 }
