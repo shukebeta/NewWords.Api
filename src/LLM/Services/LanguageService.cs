@@ -127,8 +127,6 @@ public class LanguageService(IConfigurationService configurationService, ILogger
             };
 
             stepStopwatch.Stop();
-            logger.LogInformation("Prompt preparation completed in {ElapsedMs}ms for word '{InputText}', calling {Provider}:{ModelName} API", 
-                stepStopwatch.ElapsedMilliseconds, inputText, agent.Provider, agent.ModelName);
             
             // Use Flurl's fluent API to send request with proper error handling
             stepStopwatch.Restart();
@@ -141,8 +139,6 @@ public class LanguageService(IConfigurationService configurationService, ILogger
                 .PostJsonAsync(requestData);
             
             stepStopwatch.Stop();
-            logger.LogInformation("API request completed in {ElapsedMs}ms for word '{InputText}', status: {StatusCode}", 
-                stepStopwatch.ElapsedMilliseconds, inputText, response.ResponseMessage.StatusCode);
 
             if (!response.ResponseMessage.IsSuccessStatusCode)
             {
@@ -163,8 +159,6 @@ public class LanguageService(IConfigurationService configurationService, ILogger
             stepStopwatch.Restart();
             var apiResponse = await response.GetJsonAsync<ApiCompletionResponse>();
             stepStopwatch.Stop();
-            logger.LogInformation("API response parsing completed in {ElapsedMs}ms for word '{InputText}'", 
-                stepStopwatch.ElapsedMilliseconds, inputText);
 
             // Parse the response with better validation
             if (apiResponse?.Choices == null || apiResponse.Choices.Length == 0)
