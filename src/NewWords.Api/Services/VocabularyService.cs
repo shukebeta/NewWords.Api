@@ -98,7 +98,7 @@ namespace NewWords.Api.Services
                     stepStopwatch.Restart();
                     try
                     {
-                        aiResult = await CallAiWithRetryAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
+                        aiResult = await InvokeAiServiceAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
                         stepStopwatch.Stop();
                         logger.LogInformation("AI call completed in {ElapsedMs}ms for word '{WordText}', success: {Success}", 
                             stepStopwatch.ElapsedMilliseconds, wordTextTrimmed, aiResult?.IsSuccess ?? false);
@@ -395,44 +395,7 @@ namespace NewWords.Api.Services
             newExplanation.Id = newExplanationId;
             return newExplanation;
         }
-        private async Task<WordExplanation> _HandleExplanation(string wordText, string learningLanguageCode, string explanationLanguageCode,
-            long wordCollectionId)
-        {
-            var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
-                we.WordCollectionId == wordCollectionId &&
-                we.LearningLanguage == learningLanguageCode &&
-                we.ExplanationLanguage == explanationLanguageCode);
-
-            if (explanation is not null) return explanation;
-            var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
-            var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
-            var explanationResult =
-                await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, learningLanguageName);
-
-            if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
-            {
-                logger.LogError(
-                    $"Failed to get explanation from AI for word '{wordText}': {explanationResult.ErrorMessage}");
-                throw new Exception(
-                    $"Failed to get explanation from AI: {explanationResult.ErrorMessage ?? "AI returned empty markdown."}");
-            }
-
-            var newExplanation = new WordExplanation
-            {
-                WordCollectionId = wordCollectionId,
-                WordText = wordText,
-                LearningLanguage = learningLanguageCode,
-                ExplanationLanguage = explanationLanguageCode,
-                MarkdownExplanation = explanationResult.Markdown,
-                ProviderModelName = explanationResult.ModelName,
-                CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
-            };
-            var newExplanationId = await wordExplanationRepository.InsertReturnIdentityAsync(newExplanation);
-            newExplanation.Id = newExplanationId; // Assign the returned ID to the entity's Id property
-            explanation = newExplanation;
-
-            return explanation;
-        }
+        // ...existing code...
 
         /// <summary>
         /// 处理单词规范化：如果AI纠正了用户输入，确保WordCollection只保留标准词。
@@ -503,10 +466,10 @@ namespace NewWords.Api.Services
         /// <summary>
         /// Call AI with limited retries and return ExplanationResult. This wraps the ILanguageService call.
         /// </summary>
-        private async Task<ExplanationResult> CallAiWithRetryAsync(string inputText, string nativeLanguageName, string targetLanguageName)
+        private async Task<ExplanationResult> InvokeAiServiceAsync(string inputText, string nativeLanguageName, string targetLanguageName)
         {
             var stopwatch = Stopwatch.StartNew();
-            logger.LogInformation("Starting AI call for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}", 
+            logger.LogInformation("Starting AI call (invoke+fallback) for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}", 
                 inputText, nativeLanguageName, targetLanguageName);
             
             try
