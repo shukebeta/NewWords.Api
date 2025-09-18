@@ -41,7 +41,7 @@ builder.Services.AddCors(SetupCors(builder));
 ConfigAuthentication(builder);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAutoMapper(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile));
-builder.Services.RegisterServices();
+builder.Services.RegisterServices(builder.Configuration);
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Local"))

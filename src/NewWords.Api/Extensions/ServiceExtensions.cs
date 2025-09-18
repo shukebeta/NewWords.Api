@@ -2,6 +2,7 @@ using Api.Framework;
 using LLM;
 using LLM.Services;
 using NewWords.Api.Helpers;
+using NewWords.Api.Options;
 using NewWords.Api.Repositories;
 using NewWords.Api.Services;
 using NewWords.Api.Services.interfaces;
@@ -10,8 +11,11 @@ namespace NewWords.Api.Extensions;
 
 public static class ServiceExtensions
 {
-    public static void RegisterServices(this IServiceCollection services)
+    public static void RegisterServices(this IServiceCollection services, IConfiguration configuration)
     {
+        // Register Configuration Options
+        services.Configure<RedisOptions>(configuration.GetSection("Redis"));
+
         // Register Application Services
         services.AddSingleton(typeof(IRepositoryBase<>), typeof(RepositoryBase<>));
         services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
@@ -26,6 +30,9 @@ public static class ServiceExtensions
         services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<IVocabularyService, VocabularyService>();
         services.AddSingleton<IStoryService, StoryService>();
+        
+        // Register Background Services
         services.AddHostedService<StoryGenerationBackgroundService>();
+        services.AddHostedService<ConfigurationSubscriberService>();
     }
 }
