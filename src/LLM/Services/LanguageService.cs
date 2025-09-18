@@ -245,6 +245,8 @@ public class LanguageService(IConfigurationService configurationService, ILogger
             {
                 logger.LogWarning("Agent {AgentIndex} ({Provider}:{ModelName}) failed in {AgentMs}ms for word '{InputText}': {ErrorMessage}", 
                     agentIndex, agent.Provider, agent.ModelName, agentStopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
+                logger.LogWarning("Model configuration suggestion: Consider removing or deprioritizing {Provider}:{ModelName} due to failure", 
+                    agent.Provider, agent.ModelName);
             }
             
             agentIndex++;
