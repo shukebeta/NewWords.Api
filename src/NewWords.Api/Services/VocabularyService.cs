@@ -51,10 +51,8 @@ namespace NewWords.Api.Services
         {
             try
             {
-                await db.AsTenant().BeginTranAsync();
-
-                // 1. First check if there is a local explanation (check both original and canonical word)
-                var wordTextTrimmed = wordText.Trim();
+                // Normalize input early
+                var wordTextTrimmed = NormalizeWord(wordText);
                 var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
                 var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
 
@@ -75,24 +73,51 @@ namespace NewWords.Api.Services
                         wordCollectionId = localWord.Id;
                     }
                 }
-
-                // 3. 如果本地没有解释，调用AI，提取标准词
+                // 3. 如果本地没有解释，调用AI（外部调用放在事务之外），提取标准词
+                ExplanationResult? aiResult = null;
                 if (explanation == null)
                 {
-                    var aiResult = await languageService.GetMarkdownExplanationWithFallbackAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
-                    if (!aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
+                    try
                     {
-                        throw new Exception($"Failed to get explanation from AI: {aiResult.ErrorMessage ?? "AI returned empty markdown."}");
+                        aiResult = await CallAiWithRetryAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
                     }
-                    canonicalWord = ExtractCanonicalWordFromMarkdown(aiResult.Markdown);
-                    wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
-                    explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId);
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "AI call failed unexpectedly; will fallback to user input as canonical word.");
+                        aiResult = new ExplanationResult { IsSuccess = false, ErrorMessage = ex.Message };
+                    }
+
+                    if (aiResult == null || !aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
+                    {
+                        // Do not throw here; fall back to user input to avoid failing whole transaction
+                        logger.LogWarning($"AI explanation unavailable for '{wordTextTrimmed}': {aiResult?.ErrorMessage ?? "empty response"}. Falling back.");
+                        canonicalWord = wordTextTrimmed;
+                    }
+                    else
+                    {
+                        canonicalWord = ExtractCanonicalWordFromMarkdown(aiResult.Markdown);
+                        if (string.IsNullOrWhiteSpace(canonicalWord)) canonicalWord = wordTextTrimmed;
+                    }
+
+                    // Now start a short transaction to update/read DB state
+                    await db.AsTenant().BeginTranAsync();
+                    try
+                    {
+                        wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
+                        explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId);
+                        await db.AsTenant().CommitTranAsync();
+                    }
+                    catch
+                    {
+                        await db.AsTenant().RollbackTranAsync();
+                        throw;
+                    }
                 }
 
                 // 4. Handle UserWord
                 var userWord = await _HandleUserWord(userId, explanation);
 
-                await db.AsTenant().CommitTranAsync();
+                // Nothing to do here; commit/rollback handled where transaction was opened.
 
                 // Override CreatedAt with user's timestamp (when they learned the word)
                 explanation.CreatedAt = userWord.CreatedAt;
@@ -106,26 +131,34 @@ namespace NewWords.Api.Services
             }
         }
 
-        /// <summary>
-        /// Extract the canonical word from the first line of AI markdown (e.g. "**apple**" -> "apple")
-        /// </summary>
-        private string ExtractCanonicalWordFromMarkdown(string markdown)
+    /// <summary>
+    /// Extract the canonical word from the first line of AI markdown (e.g. "**apple**" -> "apple")
+    /// </summary>
+    internal string ExtractCanonicalWordFromMarkdown(string markdown)
         {
             if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
-            var firstLine = markdown.Split('\n').FirstOrDefault();
-            if (firstLine != null && firstLine.StartsWith("**"))
+            var firstLine = markdown.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => !string.IsNullOrEmpty(l));
+            if (!string.IsNullOrEmpty(firstLine))
             {
-                // Extract the first bolded phrase (between ** and **) on the first line
-                int start = firstLine.IndexOf("**");
-                if (start != -1)
+                // Prefer the first bold block **...** on the first non-empty line
+                var start = firstLine.IndexOf("**", StringComparison.Ordinal);
+                if (start >= 0)
                 {
-                    int end = firstLine.IndexOf("**", start + 2);
-                    if (end != -1 && end > start + 2)
+                    var end = firstLine.IndexOf("**", start + 2, StringComparison.Ordinal);
+                    if (end > start + 1)
                     {
-                        return firstLine.Substring(start + 2, end - (start + 2)).Trim();
+                        var candidate = firstLine.Substring(start + 2, end - (start + 2)).Trim();
+                        if (!string.IsNullOrEmpty(candidate)) return candidate;
                     }
                 }
+
+                // Fallback: strip basic markdown characters and take the first token
+                var cleaned = firstLine.Replace("**", "").Replace("*", "").Replace("`", "").Replace("#", "").Trim();
+                var tokens = cleaned.Split(new[] { ' ', '\t', '-', '—', '\u2014', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length > 0) return tokens[0].Trim();
             }
+
+            // As a last resort, return trimmed whole markdown
             return markdown.Trim();
         }
 
@@ -365,11 +398,36 @@ namespace NewWords.Api.Services
         }
 
         // Modified original _HandleWordCollection, added canonicalWord parameter
-        private async Task<long> _HandleWordCollection(string userInput, string canonicalWord = null)
+        private async Task<long> _HandleWordCollection(string userInput, string? canonicalWord = null)
         {
             // If canonicalWord is not specified, default to userInput
             canonicalWord ??= userInput;
             return await EnsureCanonicalWordAsync(userInput, canonicalWord);
+        }
+
+        /// <summary>
+        /// Normalize word text for consistent comparisons and storage
+        /// </summary>
+        private static string NormalizeWord(string word)
+        {
+            if (string.IsNullOrWhiteSpace(word)) return string.Empty;
+            return word.Trim().ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// Call AI with limited retries and return ExplanationResult. This wraps the ILanguageService call.
+        /// </summary>
+        private async Task<ExplanationResult> CallAiWithRetryAsync(string inputText, string nativeLanguageName, string targetLanguageName)
+        {
+            try
+            {
+                return await languageService.GetMarkdownExplanationWithFallbackAsync(inputText, nativeLanguageName, targetLanguageName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, $"AI single-call failed for '{inputText}'");
+                return new ExplanationResult { IsSuccess = false, Markdown = string.Empty, ErrorMessage = ex.Message };
+            }
         }
 
         private async Task<long> _AddWordCollection(string wordText, long currentTime)

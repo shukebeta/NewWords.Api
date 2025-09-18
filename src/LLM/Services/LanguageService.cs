@@ -69,7 +69,8 @@ public class LanguageService(IConfigurationService configurationService) : ILang
                                          <formatting>
                                              <requirement>Clear paragraph breaks</requirement>
                                              <requirement>Reasonable use of bold headings for easy reading</requirement>
-                                             <requirement>Do not use code block format, output markdown content directly</requirement>
+                                            <requirement>Do not use code block format, output markdown content directly</requirement>
+                                            <requirement>OUTPUT FORMAT RULE: The very first non-empty line MUST be the canonical word only, wrapped in double asterisks, for example: **apple**. There must be no other text on that line. If the input appears misspelled, choose the closest correct canonical word and output it on the first line wrapped in double asterisks.</requirement>
                                          </formatting>
                                      </format_requirements>
                                      
