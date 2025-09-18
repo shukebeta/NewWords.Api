@@ -126,34 +126,38 @@ namespace NewWords.Api.Services
                         stepStopwatch.Stop();
                     }
 
-                    // Now start a short transaction to update/read DB state
+                    // Run DB updates in a short, well-scoped transaction helper
                     stepStopwatch.Restart();
-                    await db.AsTenant().BeginTranAsync();
                     try
                     {
-                        var handleWordCollectionStart = Stopwatch.StartNew();
-                        wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
-                        handleWordCollectionStart.Stop();
-                        
-                        var handleExplanationStart = Stopwatch.StartNew();
-                        explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId, aiResult);
-                        handleExplanationStart.Stop();
-                        
-                        await db.AsTenant().CommitTranAsync();
+                        await ExecuteInTransactionAsync(async () =>
+                        {
+                            var handleWordCollectionStart = Stopwatch.StartNew();
+                            wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
+                            handleWordCollectionStart.Stop();
+
+                            var handleExplanationStart = Stopwatch.StartNew();
+                            explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId, aiResult);
+                            handleExplanationStart.Stop();
+                        });
                         stepStopwatch.Stop();
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        await db.AsTenant().RollbackTranAsync();
                         stepStopwatch.Stop();
-                        logger.LogError("Database transaction failed and rolled back after {ElapsedMs}ms for word '{WordText}'", 
-                            stepStopwatch.ElapsedMilliseconds, wordTextTrimmed);
+                        logger.LogError(ex, "Database transaction block failed for word '{WordText}'", wordTextTrimmed);
                         throw;
                     }
                 }
 
                 // 4. Handle UserWord
                 stepStopwatch.Restart();
+                if (explanation == null)
+                {
+                    logger.LogError("Explanation unexpectedly null after DB transaction for word '{WordText}'", wordTextTrimmed);
+                    throw new InvalidOperationException("Explanation is null after expected creation");
+                }
+
                 var userWord = await _HandleUserWord(userId, explanation);
                 stepStopwatch.Stop();
 
@@ -168,11 +172,10 @@ namespace NewWords.Api.Services
                 
                 return explanation;
             }
-            catch (Exception ex) // Catch exceptions from UseTranAsync or input validation
+            catch (Exception ex) // Catch exceptions from ExecuteInTransactionAsync or input validation
             {
                 overallStopwatch.Stop();
-                await db.AsTenant().RollbackTranAsync();
-                logger.LogError(ex, "AddUserWordAsync failed after {ElapsedMs}ms for user {UserId}, word '{WordText}': Rollback executed", 
+                logger.LogError(ex, "AddUserWordAsync failed after {ElapsedMs}ms for user {UserId}, word '{WordText}'", 
                     overallStopwatch.ElapsedMilliseconds, userId, wordText);
                 throw;
             }
@@ -658,6 +661,58 @@ namespace NewWords.Api.Services
             // Note: today and yesterday are now included in dayIntervals with proper filtering
 
             return timestamps.OrderBy(t => t).ToArray();
+        }
+
+        /// <summary>
+        /// Execute an async action inside a short database transaction scope.
+        /// Commits on success and rolls back on exception.
+        /// </summary>
+        private async Task ExecuteInTransactionAsync(Func<Task> action)
+        {
+            try
+            {
+                await db.AsTenant().BeginTranAsync();
+                await action();
+                await db.AsTenant().CommitTranAsync();
+            }
+            catch
+            {
+                try
+                {
+                    await db.AsTenant().RollbackTranAsync();
+                }
+                catch (Exception rbEx)
+                {
+                    logger.LogError(rbEx, "Rollback failed after transaction exception");
+                }
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Execute an async function inside a short database transaction and return a value.
+        /// </summary>
+        private async Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> func)
+        {
+            try
+            {
+                await db.AsTenant().BeginTranAsync();
+                var result = await func();
+                await db.AsTenant().CommitTranAsync();
+                return result;
+            }
+            catch
+            {
+                try
+                {
+                    await db.AsTenant().RollbackTranAsync();
+                }
+                catch (Exception rbEx)
+                {
+                    logger.LogError(rbEx, "Rollback failed after transaction exception");
+                }
+                throw;
+            }
         }
     }
 }
