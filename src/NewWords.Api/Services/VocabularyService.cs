@@ -130,7 +130,7 @@ namespace NewWords.Api.Services
                     stepStopwatch.Restart();
                     try
                     {
-                        await ExecuteInTransactionAsync(async () =>
+                        await TransactionHelper.ExecuteInTransactionAsync(db, async () =>
                         {
                             var handleWordCollectionStart = Stopwatch.StartNew();
                             wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
@@ -139,7 +139,7 @@ namespace NewWords.Api.Services
                             var handleExplanationStart = Stopwatch.StartNew();
                             explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId, aiResult);
                             handleExplanationStart.Stop();
-                        });
+                        }, logger);
                         stepStopwatch.Stop();
                     }
                     catch (Exception ex)
@@ -644,56 +644,6 @@ namespace NewWords.Api.Services
             return timestamps.OrderBy(t => t).ToArray();
         }
 
-        /// <summary>
-        /// Execute an async action inside a short database transaction scope.
-        /// Commits on success and rolls back on exception.
-        /// </summary>
-        private async Task ExecuteInTransactionAsync(Func<Task> action)
-        {
-            try
-            {
-                await db.AsTenant().BeginTranAsync();
-                await action();
-                await db.AsTenant().CommitTranAsync();
-            }
-            catch
-            {
-                try
-                {
-                    await db.AsTenant().RollbackTranAsync();
-                }
-                catch (Exception rbEx)
-                {
-                    logger.LogError(rbEx, "Rollback failed after transaction exception");
-                }
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// Execute an async function inside a short database transaction and return a value.
-        /// </summary>
-        private async Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> func)
-        {
-            try
-            {
-                await db.AsTenant().BeginTranAsync();
-                var result = await func();
-                await db.AsTenant().CommitTranAsync();
-                return result;
-            }
-            catch
-            {
-                try
-                {
-                    await db.AsTenant().RollbackTranAsync();
-                }
-                catch (Exception rbEx)
-                {
-                    logger.LogError(rbEx, "Rollback failed after transaction exception");
-                }
-                throw;
-            }
-        }
+        // ...existing code...
     }
 }
