@@ -406,8 +406,8 @@ namespace NewWords.Api.Services
         private async Task<long> EnsureCanonicalWordAsync(string userInput, string canonicalWord)
         {
             var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
-            userInput = userInput.Trim();
-            canonicalWord = canonicalWord.Trim();
+            userInput = NormalizeWord(userInput);
+            canonicalWord = NormalizeWord(canonicalWord);
 
             // 查找错词和标准词
             var wrongEntry = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == userInput && wc.DeletedAt == null);
@@ -441,7 +441,7 @@ namespace NewWords.Api.Services
             }
             else
             {
-                // 两者都不存在，插入标准词
+                // 两者都不存在，插入标准词（并发时尝试插入失败则重查）
                 return await _AddWordCollection(canonicalWord, currentTime);
             }
         }
@@ -501,14 +501,32 @@ namespace NewWords.Api.Services
 
         private async Task<long> _AddWordCollection(string wordText, long currentTime)
         {
+            // Ensure the word text is normalized before insert
+            var normalized = NormalizeWord(wordText);
             var newCollectionWord = new WordCollection
             {
-                WordText = wordText,
+                WordText = normalized,
                 QueryCount = 1,
                 CreatedAt = currentTime,
                 UpdatedAt = currentTime
             };
-            return await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
+
+            try
+            {
+                return await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Insert WordCollection failed for '{WordText}'; attempting to re-query existing record", normalized);
+                // Likely a duplicate-key caused by concurrent insert; try to find existing record
+                var existing = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == normalized && wc.DeletedAt == null);
+                if (existing != null)
+                {
+                    return existing.Id;
+                }
+                // If not found, rethrow original exception for visibility
+                throw;
+            }
         }
 
         private async Task _DeleteUserWordWithCleanup(UserWord userWord)
