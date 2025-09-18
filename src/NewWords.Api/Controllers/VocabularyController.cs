@@ -6,6 +6,7 @@ using NewWords.Api.Entities;
 using NewWords.Api.Services;
 using NewWords.Api.Models.DTOs.Vocabulary;
 using NewWords.Api.Services.interfaces;
+using System.Diagnostics;
 
 namespace NewWords.Api.Controllers
 {
@@ -13,7 +14,8 @@ namespace NewWords.Api.Controllers
     public class VocabularyController(
         IVocabularyService vocabularyService,
         IQueryHistoryService queryHistoryService,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ILogger<VocabularyController> logger)
         : BaseController
     {
         /// <summary>
@@ -43,16 +45,35 @@ namespace NewWords.Api.Controllers
         [HttpPost]
         public async Task<ApiResult<WordExplanation>> Add(AddWordRequest addWordRequest)
         {
+            var stopwatch = Stopwatch.StartNew();
             var userId = currentUser.Id;
-            var addedWordExplanation = await vocabularyService.AddUserWordAsync(
-                userId,
-                addWordRequest.WordText,
-                addWordRequest.LearningLanguage,
-                addWordRequest.ExplanationLanguage
-            );
+            
+            logger.LogInformation("Starting add word operation for user {UserId}, word '{WordText}', learning language: {LearningLanguage}, explanation language: {ExplanationLanguage}", 
+                userId, addWordRequest.WordText, addWordRequest.LearningLanguage, addWordRequest.ExplanationLanguage);
+            
+            try
+            {
+                var addedWordExplanation = await vocabularyService.AddUserWordAsync(
+                    userId,
+                    addWordRequest.WordText,
+                    addWordRequest.LearningLanguage,
+                    addWordRequest.ExplanationLanguage
+                );
+                
+                stopwatch.Stop();
+                logger.LogInformation("Successfully added word '{WordText}' for user {UserId} in {ElapsedMs}ms", 
+                    addWordRequest.WordText, userId, stopwatch.ElapsedMilliseconds);
 
-            queryHistoryService.LogQueryAsync(addedWordExplanation.WordCollectionId, currentUser.Id);
-            return new SuccessfulResult<WordExplanation>(addedWordExplanation);
+                queryHistoryService.LogQueryAsync(addedWordExplanation.WordCollectionId, currentUser.Id);
+                return new SuccessfulResult<WordExplanation>(addedWordExplanation);
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                logger.LogError(ex, "Failed to add word '{WordText}' for user {UserId} after {ElapsedMs}ms", 
+                    addWordRequest.WordText, userId, stopwatch.ElapsedMilliseconds);
+                throw;
+            }
         }
 
         /// <summary>

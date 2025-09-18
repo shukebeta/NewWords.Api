@@ -2,13 +2,15 @@ using System.Text.Json;
 using LLM.Models;
 using Flurl.Http;
 using Api.Framework.Options;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace LLM.Services;
 
 /// <summary>
 /// Language Service, fully utilizing Flurl features
 /// </summary>
-public class LanguageService(IConfigurationService configurationService) : ILanguageService
+public class LanguageService(IConfigurationService configurationService, ILogger<LanguageService> logger) : ILanguageService
 {
     /// <summary>
     /// Get Markdown formatted explanation using Flurl features
@@ -24,6 +26,10 @@ public class LanguageService(IConfigurationService configurationService) : ILang
         string learningLanguageName,
         Agent agent)
     {
+        var methodStopwatch = Stopwatch.StartNew();
+        logger.LogInformation("Starting GetMarkdownExplanationAsync for word '{InputText}' with agent {Provider}:{ModelName}", 
+            inputText, agent.Provider, agent.ModelName);
+        
         // Validate input
         if (string.IsNullOrEmpty(inputText))
             throw new ArgumentException("Input text cannot be empty", nameof(inputText));
@@ -34,6 +40,7 @@ public class LanguageService(IConfigurationService configurationService) : ILang
 
         try
         {
+            var stepStopwatch = Stopwatch.StartNew();
             // Build the complete API endpoint
             var apiUrl = agent.BaseUrl.TrimEnd('/') + "/chat/completions";
 
@@ -119,16 +126,31 @@ public class LanguageService(IConfigurationService configurationService) : ILang
                 temperature = 0.1f,
             };
 
+            stepStopwatch.Stop();
+            logger.LogInformation("Prompt preparation completed in {ElapsedMs}ms for word '{InputText}', calling {Provider}:{ModelName} API", 
+                stepStopwatch.ElapsedMilliseconds, inputText, agent.Provider, agent.ModelName);
+            
             // Use Flurl's fluent API to send request with proper error handling
+            stepStopwatch.Restart();
+            logger.LogInformation("Sending API request to {ApiUrl} for word '{InputText}'", apiUrl, inputText);
+            
             var response = await apiUrl
                 .WithHeader("Authorization", $"Bearer {agent.ApiKey}")
                 .WithTimeout(TimeSpan.FromSeconds(30))
                 .AllowHttpStatus("4xx,5xx")
                 .PostJsonAsync(requestData);
+            
+            stepStopwatch.Stop();
+            logger.LogInformation("API request completed in {ElapsedMs}ms for word '{InputText}', status: {StatusCode}", 
+                stepStopwatch.ElapsedMilliseconds, inputText, response.ResponseMessage.StatusCode);
 
             if (!response.ResponseMessage.IsSuccessStatusCode)
             {
                 var errorContent = await response.GetStringAsync();
+                methodStopwatch.Stop();
+                logger.LogWarning("API request failed after {TotalMs}ms for word '{InputText}', status: {StatusCode}, error: {ErrorContent}", 
+                    methodStopwatch.ElapsedMilliseconds, inputText, response.ResponseMessage.StatusCode, errorContent);
+                
                 return new ExplanationResult
                 {
                     IsSuccess = false,
@@ -138,7 +160,11 @@ public class LanguageService(IConfigurationService configurationService) : ILang
                 };
             }
 
+            stepStopwatch.Restart();
             var apiResponse = await response.GetJsonAsync<ApiCompletionResponse>();
+            stepStopwatch.Stop();
+            logger.LogInformation("API response parsing completed in {ElapsedMs}ms for word '{InputText}'", 
+                stepStopwatch.ElapsedMilliseconds, inputText);
 
             // Parse the response with better validation
             if (apiResponse?.Choices == null || apiResponse.Choices.Length == 0)
@@ -164,6 +190,10 @@ public class LanguageService(IConfigurationService configurationService) : ILang
                 };
             }
 
+            methodStopwatch.Stop();
+            logger.LogInformation("GetMarkdownExplanationAsync completed successfully in {TotalMs}ms for word '{InputText}' with {Provider}:{ModelName}", 
+                methodStopwatch.ElapsedMilliseconds, inputText, agent.Provider, agent.ModelName);
+            
             return new ExplanationResult
             {
                 IsSuccess = true,
@@ -173,6 +203,10 @@ public class LanguageService(IConfigurationService configurationService) : ILang
         }
         catch (Exception ex)
         {
+            methodStopwatch.Stop();
+            logger.LogError(ex, "GetMarkdownExplanationAsync failed after {TotalMs}ms for word '{InputText}' with {Provider}:{ModelName}", 
+                methodStopwatch.ElapsedMilliseconds, inputText, agent.Provider, agent.ModelName);
+            
             return new ExplanationResult
             {
                 IsSuccess = false,
@@ -190,15 +224,41 @@ public class LanguageService(IConfigurationService configurationService) : ILang
         string nativeLanguage,
         string targetLanguage)
     {
+        var overallStopwatch = Stopwatch.StartNew();
+        logger.LogInformation("Starting AI explanation with fallback for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}", 
+            inputText, nativeLanguage, targetLanguage);
+        
         ExplanationResult result = new ExplanationResult();
+        int agentIndex = 0;
+        
         foreach (var agent in configurationService.Agents)
         {
+            var agentStopwatch = Stopwatch.StartNew();
+            logger.LogInformation("Trying agent {AgentIndex} ({Provider}:{ModelName}) for word '{InputText}'", 
+                agentIndex, agent.Provider, agent.ModelName, inputText);
+            
             result = await GetMarkdownExplanationAsync(inputText, nativeLanguage, targetLanguage, agent);
+            agentStopwatch.Stop();
+            
             if (result.IsSuccess)
             {
+                overallStopwatch.Stop();
+                logger.LogInformation("AI explanation succeeded with agent {AgentIndex} ({Provider}:{ModelName}) in {AgentMs}ms (total: {TotalMs}ms) for word '{InputText}'", 
+                    agentIndex, agent.Provider, agent.ModelName, agentStopwatch.ElapsedMilliseconds, overallStopwatch.ElapsedMilliseconds, inputText);
                 return result;
             }
+            else
+            {
+                logger.LogWarning("Agent {AgentIndex} ({Provider}:{ModelName}) failed in {AgentMs}ms for word '{InputText}': {ErrorMessage}", 
+                    agentIndex, agent.Provider, agent.ModelName, agentStopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
+            }
+            
+            agentIndex++;
         }
+        
+        overallStopwatch.Stop();
+        logger.LogError("All AI agents failed after {TotalMs}ms for word '{InputText}'. Last error: {ErrorMessage}", 
+            overallStopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
 
         return result;
     }
