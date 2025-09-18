@@ -64,15 +64,11 @@ namespace NewWords.Api.Services
                 var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
                 
                 stepStopwatch.Stop();
-                logger.LogInformation("Input normalization completed in {ElapsedMs}ms for word '{WordText}'", 
-                    stepStopwatch.ElapsedMilliseconds, wordTextTrimmed);
 
                 // 2. Then check if there is a local explanation (original word)
                 stepStopwatch.Restart();
                 var localWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == wordTextTrimmed && wc.DeletedAt == null);
                 stepStopwatch.Stop();
-                logger.LogInformation("Local word collection lookup completed in {ElapsedMs}ms for word '{WordText}', found: {Found}", 
-                    stepStopwatch.ElapsedMilliseconds, wordTextTrimmed, localWord != null);
                 
                 WordExplanation? explanation = null;
                 long wordCollectionId = 0;
@@ -86,8 +82,6 @@ namespace NewWords.Api.Services
                         we.LearningLanguage == learningLanguageCode &&
                         we.ExplanationLanguage == explanationLanguageCode);
                     stepStopwatch.Stop();
-                    logger.LogInformation("Local word explanation lookup completed in {ElapsedMs}ms for word '{WordText}', found: {Found}", 
-                        stepStopwatch.ElapsedMilliseconds, wordTextTrimmed, explanation != null);
                     
                     if (explanation != null)
                     {
@@ -130,8 +124,6 @@ namespace NewWords.Api.Services
                         canonicalWord = ExtractCanonicalWordFromMarkdown(aiResult.Markdown);
                         if (string.IsNullOrWhiteSpace(canonicalWord)) canonicalWord = wordTextTrimmed;
                         stepStopwatch.Stop();
-                        logger.LogInformation("Canonical word extraction completed in {ElapsedMs}ms, original: '{OriginalWord}', canonical: '{CanonicalWord}'", 
-                            stepStopwatch.ElapsedMilliseconds, wordTextTrimmed, canonicalWord);
                     }
 
                     // Now start a short transaction to update/read DB state
@@ -142,19 +134,13 @@ namespace NewWords.Api.Services
                         var handleWordCollectionStart = Stopwatch.StartNew();
                         wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
                         handleWordCollectionStart.Stop();
-                        logger.LogInformation("_HandleWordCollection completed in {ElapsedMs}ms for word '{WordText}'", 
-                            handleWordCollectionStart.ElapsedMilliseconds, wordTextTrimmed);
                         
                         var handleExplanationStart = Stopwatch.StartNew();
                         explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId, aiResult);
                         handleExplanationStart.Stop();
-                        logger.LogInformation("_HandleExplanation completed in {ElapsedMs}ms for word '{WordText}'", 
-                            handleExplanationStart.ElapsedMilliseconds, wordTextTrimmed);
                         
                         await db.AsTenant().CommitTranAsync();
                         stepStopwatch.Stop();
-                        logger.LogInformation("Database transaction completed in {ElapsedMs}ms for word '{WordText}'", 
-                            stepStopwatch.ElapsedMilliseconds, wordTextTrimmed);
                     }
                     catch
                     {
@@ -170,8 +156,6 @@ namespace NewWords.Api.Services
                 stepStopwatch.Restart();
                 var userWord = await _HandleUserWord(userId, explanation);
                 stepStopwatch.Stop();
-                logger.LogInformation("_HandleUserWord completed in {ElapsedMs}ms for user {UserId}, word '{WordText}'", 
-                    stepStopwatch.ElapsedMilliseconds, userId, wordTextTrimmed);
 
                 // Nothing to do here; commit/rollback handled where transaction was opened.
 
