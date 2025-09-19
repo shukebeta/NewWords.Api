@@ -51,6 +51,21 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Local"))
 }
 
 app.UseCors("AllowOrigins");
+
+// Temporary middleware to debug mysterious POST requests
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == "POST")
+    {
+        logger.LogWarning("🔍 DEBUG POST Request: Path={Path}, UserAgent={UserAgent}, ContentType={ContentType}, ContentLength={ContentLength}", 
+            context.Request.Path, 
+            context.Request.Headers.UserAgent.ToString(),
+            context.Request.ContentType,
+            context.Request.ContentLength);
+    }
+    await next();
+});
+
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseAuthentication();

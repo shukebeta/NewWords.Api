@@ -10,6 +10,7 @@ public class ConfigurationSubscriberService : BackgroundService
 {
     private readonly ILogger<ConfigurationSubscriberService> _logger;
     private readonly RedisOptions _redisOptions;
+    private readonly object _nlogLock = new object();
     private ConnectionMultiplexer? _redis;
     private ISubscriber? _subscriber;
 
@@ -25,14 +26,32 @@ public class ConfigurationSubscriberService : BackgroundService
     {
         _logger.LogInformation("Configuration Subscriber Service starting");
 
-        try
+        while (!stoppingToken.IsCancellationRequested)
         {
-            await ConnectToRedis();
-            await SubscribeToConfigChanges(stoppingToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in Configuration Subscriber Service");
+            try
+            {
+                await ConnectToRedis();
+                await SubscribeToConfigChanges(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in Configuration Subscriber Service. Retrying in 15 seconds...");
+                
+                // Dispose existing connection if any
+                _redis?.Dispose();
+                _redis = null;
+                _subscriber = null;
+                
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogInformation("Configuration Subscriber Service stopping during retry delay");
+                    break;
+                }
+            }
         }
     }
 
@@ -44,6 +63,9 @@ public class ConfigurationSubscriberService : BackgroundService
         _subscriber = _redis.GetSubscriber();
         
         _logger.LogInformation("Connected to Redis successfully");
+        
+        // Load current configuration values on startup
+        await LoadCurrentConfigValues();
     }
 
     private async Task SubscribeToConfigChanges(CancellationToken stoppingToken)
@@ -124,32 +146,55 @@ public class ConfigurationSubscriberService : BackgroundService
     {
         try
         {
+            // Validate input
+            if (string.IsNullOrWhiteSpace(levelString))
+            {
+                _logger.LogWarning("Cannot update NLog level: empty or null level string provided, keeping current configuration");
+                return;
+            }
+
             var newLevel = NLog.LogLevel.FromString(levelString);
             if (newLevel != null)
             {
-                var config = LogManager.Configuration;
-                if (config?.LoggingRules?.Count > 0)
+                lock (_nlogLock)
                 {
-                    // Update the main logging rule (the last one, like in the existing NLog.config)
-                    var mainRule = config.LoggingRules.LastOrDefault();
-                    if (mainRule != null)
+                    var config = LogManager.Configuration;
+                    if (config == null)
                     {
-                        mainRule.SetLoggingLevels(newLevel, NLog.LogLevel.Fatal);
-                        LogManager.ReconfigExistingLoggers();
+                        _logger.LogError("NLog configuration is null");
+                        return;
+                    }
+
+                    // Check if seq target exists - without centralized logging, dynamic adjustment is pointless
+                    var seqTarget = config.FindTargetByName("seq");
+                    if (seqTarget == null)
+                    {
+                        _logger.LogError("Cannot update log level: No 'seq' target found. Dynamic log level adjustment requires centralized logging to be useful.");
+                        return;
+                    }
+
+                    // Find or create the dynamic logging rule
+                    var dynamicRule = config.LoggingRules.FirstOrDefault(r => r.RuleName == "dynamic-app-logs");
+                    if (dynamicRule == null)
+                    {
+                        // Create new rule with seq target only
+                        dynamicRule = new NLog.Config.LoggingRule("*", seqTarget);
+                        dynamicRule.RuleName = "dynamic-app-logs";
+                        dynamicRule.SetLoggingLevels(newLevel, NLog.LogLevel.Fatal);
+                        config.LoggingRules.Add(dynamicRule);
                         
-                        _logger.LogInformation("NLog minimum level updated to: {Level}", newLevel);
-                        
-                        // Test the new log level
-                        TestLogLevels();
+                        _logger.LogInformation("Created new dynamic logging rule for centralized logging with level: {Level}", newLevel);
                     }
                     else
                     {
-                        _logger.LogWarning("No main logging rule found in NLog configuration");
+                        dynamicRule.SetLoggingLevels(newLevel, NLog.LogLevel.Fatal);
+                        _logger.LogInformation("Updated dynamic logging rule level to: {Level}", newLevel);
                     }
-                }
-                else
-                {
-                    _logger.LogWarning("No logging rules found in NLog configuration");
+
+                    LogManager.ReconfigExistingLoggers();
+                    
+                    // Test the new log level
+                    TestLogLevels();
                 }
             }
             else
@@ -172,6 +217,45 @@ public class ConfigurationSubscriberService : BackgroundService
         nlogLogger.Warn("TEST: This is a WARN message after level update");
         nlogLogger.Error("TEST: This is an ERROR message after level update");
         nlogLogger.Fatal("TEST: This is a FATAL message after level update");
+    }
+
+    private async Task LoadCurrentConfigValues()
+    {
+        try
+        {
+            _logger.LogInformation("Loading current configuration values from Redis");
+            
+            var database = _redis!.GetDatabase();
+            
+            // Load NLog level configuration
+            var nlogLevelKey = $"{_redisOptions.ProjectPrefix}:config:nlog:minlevel";
+            var currentLogLevel = await database.StringGetAsync(nlogLevelKey);
+            
+            if (currentLogLevel.HasValue && !string.IsNullOrWhiteSpace(currentLogLevel))
+            {
+                _logger.LogInformation("Found existing NLog level configuration: {Level}", currentLogLevel);
+                UpdateNLogMinLevel(currentLogLevel!);
+            }
+            else
+            {
+                if (currentLogLevel.HasValue)
+                {
+                    _logger.LogWarning("Found empty/whitespace NLog level configuration in Redis, using default");
+                }
+                else
+                {
+                    _logger.LogInformation("No existing NLog level configuration found in Redis, using default");
+                }
+            }
+            
+            // Future: Add other configuration loading here
+            // var llmTimeoutKey = $"{_redisOptions.ProjectPrefix}:config:llm:timeout";
+            // var llmTimeout = await database.StringGetAsync(llmTimeoutKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading current configuration values from Redis");
+        }
     }
 
     public override async Task StopAsync(CancellationToken stoppingToken)
