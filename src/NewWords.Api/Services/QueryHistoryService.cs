@@ -15,21 +15,15 @@ public class QueryHistoryService(
 {
     public void LogQueryAsync(long wordCollectionId, int userId)
     {
-        _ = Task.Run(async () =>
-        {
-            try
+        TaskExtensions.SafeFireAndForget(
+            async () => await repo.InsertAsync(new QueryHistory
             {
-                await repo.InsertAsync(new QueryHistory
-                {
-                    WordCollectionId = wordCollectionId,
-                    UserId = userId,
-                    CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
-                });
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to log query history for wordCollectionId: {WordCollectionId}", wordCollectionId);
-            }
-        });
+                WordCollectionId = wordCollectionId,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
+            }),
+            logger,
+            $"Failed to log query history for wordCollectionId: {wordCollectionId}"
+        );
     }
 }

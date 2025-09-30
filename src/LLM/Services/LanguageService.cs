@@ -58,7 +58,7 @@ public class LanguageService(IConfigurationService configurationService, ILogger
                                      </critical_instruction>
                                      
                                      <task>
-                                         <beforehand_check>First, carefully determine what language the input text is. Please note: if the input is a common {learningLanguageName} word, even if similar words might exist in other languages, it should be primarily recognized as {learningLanguageName}.</beforehand_check>
+                                         <beforehand_check>First, carefully determine what language the input text is. Please note: if the input is a common {learningLanguageName} word, even if similar words might exist in other languages, it should be primarily recognized as {learningLanguageName}. If the input appears to contain typos or misspellings, silently correct them to the intended word and proceed as if the user had typed the correct word.</beforehand_check>
                                          <scenario_1>
                                             <condition>If the input is in {learningLanguageName} (the language the user is learning)</condition>
                                  			<action>Explain the meaning of the input in {nativeLanguageName} in an easy-to-understand way, including its common meanings in different fields and contexts. Add cultural background if necessary.</action>
@@ -77,8 +77,18 @@ public class LanguageService(IConfigurationService configurationService, ILogger
                                              <requirement>Clear paragraph breaks</requirement>
                                              <requirement>Reasonable use of bold headings for easy reading</requirement>
                                             <requirement>Do not use code block format, output markdown content directly</requirement>
-                                            <requirement>OUTPUT FORMAT RULE: The very first non-empty line MUST be the canonical word only, wrapped in double asterisks, for example: **apple**. There must be no other text on that line. If the input appears misspelled, choose the closest correct canonical word and output it on the first line wrapped in double asterisks.</requirement>
+                                            <requirement>OUTPUT FORMAT RULE: The very first non-empty line MUST be the canonical word only, wrapped in double asterisks, for example: **apple**. There must be no other text on that line.</requirement>
                                          </formatting>
+                                         <typo_handling>
+                                            <critical_rule>If the user input contains a typo or misspelling, you MUST seamlessly correct it without drawing attention to the error. Always use the correct spelling as if that's what the user originally typed.</critical_rule>
+                                            <examples>
+                                                <incorrect_approach>User types "ptofess" → Output: **ptofess** "ptofess"在英语中并不是一个标准单词，可能是"profess"的拼写错误</incorrect_approach>
+                                                <correct_approach>User types "ptofess" → Output: **profess** /prəˈfes/ 意思是"声称，宣称"</correct_approach>
+                                                <incorrect_approach>User types "accont" → Output: **accont** "accont"不是标准单词，可能是"account"的拼写错误</incorrect_approach>
+                                                <correct_approach>User types "accont" → Output: **account** /əˈkaʊnt/ 意思是"账户，账单"</correct_approach>
+                                            </examples>
+                                            <principle>Treat the corrected word as if it was the original input. Never mention the typo, never explain that it was misspelled, and never reference the incorrect spelling in your explanation.</principle>
+                                         </typo_handling>
                                      </format_requirements>
                                      
                                      <response_example>
@@ -110,6 +120,7 @@ public class LanguageService(IConfigurationService configurationService, ILogger
                                          1. If specific cultural concepts are involved, briefly provide cultural background, otherwise skip it directly without unnecessary elaboration
                                          2. Use International Phonetic Alphabet (IPA) format
                                          3. Do not include any introductory text or ask questions at the end
+                                         4. CRITICAL: If user input has typos, automatically use the correct spelling throughout your entire response. Never mention, reference, or acknowledge the typo in any way.
                                      </important_reminders>
                                  </language_expert_prompt>
                                  """;
