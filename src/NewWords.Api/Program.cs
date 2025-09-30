@@ -5,6 +5,7 @@ using Api.Framework.Database;
 using Api.Framework.Exceptions;
 using Api.Framework.Extensions;
 using Api.Framework.Models;
+using ConfigManager.Provider;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.IdentityModel.Tokens;
@@ -15,6 +16,20 @@ using NLog.Web;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add Redis configuration provider
+var redisConfig = builder.Configuration.GetSection("Redis");
+var connectionString = redisConfig["ConnectionString"];
+var projectPrefix = redisConfig["ProjectPrefix"];
+
+if (!string.IsNullOrEmpty(connectionString) && !string.IsNullOrEmpty(projectPrefix))
+{
+    builder.Configuration.AddRedis(
+        projectName: projectPrefix,
+        connectionString: connectionString,
+        optional: true  // Don't fail if Redis is unavailable
+    );
+}
 var logger = LoggerFactory.Create(config =>
 {
     config.AddConsole();
