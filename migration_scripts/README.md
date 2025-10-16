@@ -7,8 +7,11 @@ This directory contains all database migration scripts for the NewWords.Api proj
 ### 01-03: WordCollection Language Field Removal Migration
 This migration removes the `Language` field from the `WordCollection` table to simplify the architecture and eliminate language detection ambiguity.
 
-### 04-05: Per-User Story Read Tracking Migration  
+### 04-05: Per-User Story Read Tracking Migration
 This migration implements per-user read tracking for stories, fixing the issue where `Stories.FirstReadAt` was story-level instead of per-user.
+
+### 06: UserWords UpdatedAt Field Migration
+This migration adds an `UpdatedAt` field to the `UserWords` table to enable sorting the user's vocabulary timeline by last interaction time instead of first addition time.
 
 ## Migration Steps
 
@@ -61,7 +64,7 @@ This migration implements per-user read tracking for stories, fixing the issue w
 If you need to rollback:
 
 1. **Before running merge script:** Simply restore from backup
-2. **After running merge script:** 
+2. **After running merge script:**
    - Use the `merge_log` table to identify what was changed
    - Restore from backup (recommended)
    - Or manually recreate duplicate records if backup is not available
@@ -83,7 +86,7 @@ If you need to rollback:
 ## Benefits
 
 1. **Simplified Logic:** No more language detection for storage
-2. **Better Accuracy:** User's `LearningLanguage` always correct from profile  
+2. **Better Accuracy:** User's `LearningLanguage` always correct from profile
 3. **Unified Tracking:** `QueryCount` represents total popularity across languages
 4. **Reduced Complexity:** One record per unique word text
 
@@ -117,7 +120,7 @@ Fixes the design issue where `Stories.FirstReadAt` was story-level instead of pe
    - Skips duplicate entries if script is run multiple times
    - Verifies migration completed successfully
 
-#### Phase 2: Code Deployment  
+#### Phase 2: Code Deployment
 2. **Deploy updated codebase:**
    - Updated service layer with optimized SqlSugar joins
    - Removed ownership restriction from `MarkStoryAsReadAsync`
@@ -150,7 +153,7 @@ Fixes the design issue where `Stories.FirstReadAt` was story-level instead of pe
 ### Benefits
 
 1. **Proper Read Tracking:** Users can read stories from Story Square
-2. **Zero Frontend Changes:** `StoryDto.FirstReadAt` still works as expected  
+2. **Zero Frontend Changes:** `StoryDto.FirstReadAt` still works as expected
 3. **Better Performance:** Single optimized query instead of multiple lookups
 4. **Data Preservation:** All existing read data migrated safely
 
@@ -163,4 +166,57 @@ After migration:
 - [ ] Stories show proper read status in all endpoints
 - [ ] Favorite functionality still works
 - [ ] Migration preserved all existing read data
+
+---
+
+## UserWords UpdatedAt Field Migration (06)
+
+### Overview
+Adds `UpdatedAt` field to `UserWords` table to support re-adding words to bump them to the front of the user's vocabulary timeline. Previously, words were sorted only by `CreatedAt` (first addition), but the design requires sorting by last interaction (`UpdatedAt`).
+
+### Migration Steps
+
+#### Phase 1: Run Migration Script
+1. **Run migration:**
+   ```sql
+   source 06_userwords_updatedat.sql
+   ```
+   - Adds `UpdatedAt` column to `UserWords` table
+   - Initializes existing records with `UpdatedAt = CreatedAt`
+   - Makes column NOT NULL with default value
+   - Verifies all records have `UpdatedAt` set
+
+#### Phase 2: Code Already Deployed
+2. **Code changes:**
+   - `UserWord` entity: Added `UpdatedAt` property
+   - `VocabularyService.GetUserWordsAsync`: Changed sorting from `CreatedAt` to `UpdatedAt`
+   - `VocabularyService._HandleUserWord`: Updates `UpdatedAt` when user re-adds existing word
+   - `WordExplanation` entity: Added ignored `UpdatedAt` property for API response
+
+### Key Changes
+
+#### Database Schema:
+- **Before:** `UserWords` had only `CreatedAt` (first addition timestamp)
+- **After:** `UserWords` has both `CreatedAt` and `UpdatedAt` (last interaction timestamp)
+
+#### API Behavior:
+- **Before:** Re-adding an existing word did nothing (word stayed at original position)
+- **After:** Re-adding a word updates `UpdatedAt` and moves it to front of timeline
+- **Frontend:** Zero changes needed - sorting now reflects last interaction
+
+### Benefits
+
+1. **Better UX:** Re-adding a word bumps it to the front of the timeline
+2. **Data Preservation:** All existing words keep their original `CreatedAt`
+3. **Backward Compatible:** Existing records initialized with `UpdatedAt = CreatedAt`
+4. **Performance:** Same query performance with indexed sorting
+
+### Testing Checklist
+
+After migration:
+- [ ] Existing words show in timeline (sorted by original creation date initially)
+- [ ] Re-adding an existing word moves it to the front of the timeline
+- [ ] New words appear at the front of the timeline
+- [ ] API returns both `CreatedAt` and `UpdatedAt` in response
+- [ ] All UserWords records have non-null `UpdatedAt` values
 - [ ] Performance improved (check query execution plans)

@@ -32,10 +32,11 @@ namespace NewWords.Api.Services
             var pagedWords = await db.Queryable<WordExplanation>()
                 .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
                 .Where((we, uw) => uw.UserId == userId)
-                .OrderBy((we, uw) => uw.CreatedAt, OrderByType.Desc)
+                .OrderBy((we, uw) => uw.UpdatedAt, OrderByType.Desc)
                 .Select((we, uw) => new WordExplanation()
                 {
                     CreatedAt = uw.CreatedAt,
+                    UpdatedAt = uw.UpdatedAt,
                 }, true)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
@@ -51,25 +52,25 @@ namespace NewWords.Api.Services
         public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string learningLanguageCode, string explanationLanguageCode)
         {
             var overallStopwatch = Stopwatch.StartNew();
-            logger.LogInformation("Starting AddUserWordAsync for user {UserId}, word '{WordText}', learning: {LearningLanguage}, explanation: {ExplanationLanguage}", 
+            logger.LogInformation("Starting AddUserWordAsync for user {UserId}, word '{WordText}', learning: {LearningLanguage}, explanation: {ExplanationLanguage}",
                 userId, wordText, learningLanguageCode, explanationLanguageCode);
-            
+
             try
             {
                 var stepStopwatch = Stopwatch.StartNew();
-                
+
                 // Normalize input early
                 var wordTextTrimmed = NormalizeWord(wordText);
                 var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
                 var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
-                
+
                 stepStopwatch.Stop();
 
                 // 2. Then check if there is a local explanation (original word)
                 stepStopwatch.Restart();
                 var localWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == wordTextTrimmed && wc.DeletedAt == null);
                 stepStopwatch.Stop();
-                
+
                 WordExplanation? explanation = null;
                 long wordCollectionId = 0;
                 string canonicalWord = wordTextTrimmed;
@@ -82,31 +83,31 @@ namespace NewWords.Api.Services
                         we.LearningLanguage == learningLanguageCode &&
                         we.ExplanationLanguage == explanationLanguageCode);
                     stepStopwatch.Stop();
-                    
+
                     if (explanation != null)
                     {
                         wordCollectionId = localWord.Id;
                     }
                 }
-                
+
                 // 3. 如果本地没有解释，调用AI（外部调用放在事务之外），提取标准词
                 ExplanationResult? aiResult = null;
                 if (explanation == null)
                 {
                     logger.LogInformation("No local explanation found for word '{WordText}', calling AI service", wordTextTrimmed);
-                    
+
                     stepStopwatch.Restart();
                     try
                     {
                         aiResult = await InvokeAiServiceAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
                         stepStopwatch.Stop();
-                        logger.LogInformation("AI call completed in {ElapsedMs}ms for word '{WordText}', success: {Success}", 
+                        logger.LogInformation("AI call completed in {ElapsedMs}ms for word '{WordText}', success: {Success}",
                             stepStopwatch.ElapsedMilliseconds, wordTextTrimmed, aiResult?.IsSuccess ?? false);
                     }
                     catch (Exception ex)
                     {
                         stepStopwatch.Stop();
-                        logger.LogWarning(ex, "AI call failed after {ElapsedMs}ms for word '{WordText}'; will fallback to user input as canonical word", 
+                        logger.LogWarning(ex, "AI call failed after {ElapsedMs}ms for word '{WordText}'; will fallback to user input as canonical word",
                             stepStopwatch.ElapsedMilliseconds, wordTextTrimmed);
                         aiResult = new ExplanationResult { IsSuccess = false, ErrorMessage = ex.Message };
                     }
@@ -114,7 +115,7 @@ namespace NewWords.Api.Services
                     if (aiResult == null || !aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
                     {
                         // Do not throw here; fall back to user input to avoid failing whole transaction
-                        logger.LogWarning("AI explanation unavailable for '{WordText}': {ErrorMessage}. Falling back to original word", 
+                        logger.LogWarning("AI explanation unavailable for '{WordText}': {ErrorMessage}. Falling back to original word",
                             wordTextTrimmed, aiResult?.ErrorMessage ?? "empty response");
                         canonicalWord = wordTextTrimmed;
                     }
@@ -165,17 +166,17 @@ namespace NewWords.Api.Services
 
                 // Override CreatedAt with user's timestamp (when they learned the word)
                 explanation.CreatedAt = userWord.CreatedAt;
-                
+
                 overallStopwatch.Stop();
-                logger.LogInformation("AddUserWordAsync completed successfully in {ElapsedMs}ms for user {UserId}, word '{WordText}'", 
+                logger.LogInformation("AddUserWordAsync completed successfully in {ElapsedMs}ms for user {UserId}, word '{WordText}'",
                     overallStopwatch.ElapsedMilliseconds, userId, wordTextTrimmed);
-                
+
                 return explanation;
             }
             catch (Exception ex) // Catch exceptions from ExecuteInTransactionAsync or input validation
             {
                 overallStopwatch.Stop();
-                logger.LogError(ex, "AddUserWordAsync failed after {ElapsedMs}ms for user {UserId}, word '{WordText}'", 
+                logger.LogError(ex, "AddUserWordAsync failed after {ElapsedMs}ms for user {UserId}, word '{WordText}'",
                     overallStopwatch.ElapsedMilliseconds, userId, wordText);
                 throw;
             }
@@ -343,6 +344,7 @@ namespace NewWords.Api.Services
             var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
                 uw.UserId == userId && uw.WordExplanationId == explanationToReturn.Id);
 
+            var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
             if (userWord == null)
             {
                 var newUserWord = new UserWord
@@ -350,11 +352,16 @@ namespace NewWords.Api.Services
                     UserId = userId,
                     WordExplanationId = explanationToReturn.Id,
                     Status = 0,
-                    CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
+                    CreatedAt = currentTime,
+                    UpdatedAt = currentTime
                 };
                 await userWordRepository.InsertAsync(newUserWord);
                 return newUserWord;
             }
+
+            // Word exists - update UpdatedAt to move it to front of timeline
+            userWord.UpdatedAt = currentTime;
+            await userWordRepository.UpdateAsync(userWord);
 
             return userWord;
         }
@@ -373,12 +380,12 @@ namespace NewWords.Api.Services
             // Use the provided AI result instead of calling AI again
             if (aiResult == null || !aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
             {
-                logger.LogError("AI result is null or failed for word '{WordText}': {ErrorMessage}", 
+                logger.LogError("AI result is null or failed for word '{WordText}': {ErrorMessage}",
                     wordText, aiResult?.ErrorMessage ?? "null result");
                 throw new Exception($"Failed to get explanation from AI: {aiResult?.ErrorMessage ?? "AI result is null"}");
             }
 
-            logger.LogInformation("Reusing AI result for word '{WordText}' from provider {Provider}", 
+            logger.LogInformation("Reusing AI result for word '{WordText}' from provider {Provider}",
                 wordText, aiResult.ModelName);
 
             var newExplanation = new WordExplanation
@@ -469,31 +476,31 @@ namespace NewWords.Api.Services
         private async Task<ExplanationResult> InvokeAiServiceAsync(string inputText, string nativeLanguageName, string targetLanguageName)
         {
             var stopwatch = Stopwatch.StartNew();
-            logger.LogInformation("Starting AI call (invoke+fallback) for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}", 
+            logger.LogInformation("Starting AI call (invoke+fallback) for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}",
                 inputText, nativeLanguageName, targetLanguageName);
-            
+
             try
             {
                 var result = await languageService.GetMarkdownExplanationWithFallbackAsync(inputText, nativeLanguageName, targetLanguageName);
                 stopwatch.Stop();
-                
+
                 if (result.IsSuccess)
                 {
-                    logger.LogInformation("AI call succeeded in {ElapsedMs}ms for word '{InputText}', provider: {ProviderModel}", 
+                    logger.LogInformation("AI call succeeded in {ElapsedMs}ms for word '{InputText}', provider: {ProviderModel}",
                         stopwatch.ElapsedMilliseconds, inputText, result.ModelName);
                 }
                 else
                 {
-                    logger.LogWarning("AI call failed in {ElapsedMs}ms for word '{InputText}', error: {ErrorMessage}", 
+                    logger.LogWarning("AI call failed in {ElapsedMs}ms for word '{InputText}', error: {ErrorMessage}",
                         stopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
                 }
-                
+
                 return result;
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                logger.LogWarning(ex, "AI call threw exception after {ElapsedMs}ms for word '{InputText}'", 
+                logger.LogWarning(ex, "AI call threw exception after {ElapsedMs}ms for word '{InputText}'",
                     stopwatch.ElapsedMilliseconds, inputText);
                 return new ExplanationResult { IsSuccess = false, Markdown = string.Empty, ErrorMessage = ex.Message };
             }

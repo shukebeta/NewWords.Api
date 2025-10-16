@@ -41,6 +41,12 @@ namespace NewWords.Api.Entities
         /// </summary>
         [SugarColumn(IsNullable = false)]
         public long CreatedAt { get; set; } = 0; // Default to 0 (Unix epoch start), renamed to CreatedAt for consistency
+        /// <summary>
+        /// Timestamp when the user last interacted with this word (Required, Unix timestamp as long).
+        /// </summary>
+        [SugarColumn(IsNullable = false)]
+        public long UpdatedAt { get; set; } = 0;
+
 
         // --- Navigation Properties (Optional but recommended for ORM convenience) ---
 
