@@ -15,7 +15,7 @@ public class QueryHistoryService(
 {
     public void LogQueryAsync(long wordCollectionId, int userId)
     {
-        TaskExtensions.SafeFireAndForget(
+        global::Api.Framework.Extensions.TaskExtensions.SafeFireAndForget(
             async () => await repo.InsertAsync(new QueryHistory
             {
                 WordCollectionId = wordCollectionId,

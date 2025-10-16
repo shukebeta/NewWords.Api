@@ -16,7 +16,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Api.Framework\Api.Framework.csproj" />
+      <PackageReference Include="Shukebeta.Api.Framework" Version="1.0.0" />
     </ItemGroup>
 
     <ItemGroup>
