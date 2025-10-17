@@ -28,4 +28,19 @@ public interface ILanguageService
     /// <param name="text"></param>
     /// <returns></returns>
     Task<LanguageDetectionResult> GetDetectedLanguageWithFallbackAsync(string text);
+
+    /// <summary>
+    /// Get markdown explanation using a specific agent (no fallback).
+    /// Used when refreshing explanations to generate from a specific model.
+    /// </summary>
+    /// <param name="agent">The specific agent to use</param>
+    /// <param name="wordText">The word to explain</param>
+    /// <param name="learningLanguageInEnglish">Learning language name in English</param>
+    /// <param name="explanationLanguageInEnglish">Explanation language name in English</param>
+    /// <returns>Markdown explanation string</returns>
+    Task<string> GetMarkdownExplanationAsync(
+        Agent agent,
+        string wordText,
+        string learningLanguageInEnglish,
+        string explanationLanguageInEnglish);
 }

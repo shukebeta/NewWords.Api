@@ -147,5 +147,57 @@ namespace NewWords.Api.Controllers
             var memories = await vocabularyService.MemoriesOnAsync(userId, localTimezone, yyyyMMdd);
             return new SuccessfulResult<List<WordExplanation>>(memories.ToList());
         }
+
+        /// <summary>
+        /// Get all available explanations for a word
+        /// </summary>
+        /// <param name="wordCollectionId">Word collection ID</param>
+        /// <param name="learningLanguage">Learning language code (e.g., "en", "zh")</param>
+        /// <param name="explanationLanguage">Explanation language code</param>
+        /// <returns>All explanations and user's default</returns>
+        [HttpGet("explanations/{wordCollectionId}/{learningLanguage}/{explanationLanguage}")]
+        public async Task<ApiResult<ExplanationsResponse>> Explanations(
+            long wordCollectionId,
+            string learningLanguage,
+            string explanationLanguage)
+        {
+            var userId = currentUser.Id;
+            if (userId == 0)
+            {
+                throw new ArgumentException("User not authenticated or ID not found.");
+            }
+
+            var result = await vocabularyService.GetAllExplanationsForWordAsync(
+                userId,
+                wordCollectionId,
+                learningLanguage,
+                explanationLanguage);
+
+            return new SuccessfulResult<ExplanationsResponse>(result);
+        }
+
+        /// <summary>
+        /// Switch user's default explanation for a word
+        /// </summary>
+        /// <param name="wordCollectionId">Word collection ID</param>
+        /// <param name="wordExplanationId">New default explanation ID</param>
+        [HttpPut("switch-explanation/{wordCollectionId}/{wordExplanationId}")]
+        public async Task<ApiResult> SwitchExplanation(
+            long wordCollectionId,
+            long wordExplanationId)
+        {
+            var userId = currentUser.Id;
+            if (userId == 0)
+            {
+                throw new ArgumentException("User not authenticated or ID not found.");
+            }
+
+            await vocabularyService.SwitchUserDefaultExplanationAsync(
+                userId,
+                wordCollectionId,
+                wordExplanationId);
+
+            return Success("Default explanation updated successfully");
+        }
     }
 }

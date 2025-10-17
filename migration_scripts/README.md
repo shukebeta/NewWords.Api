@@ -13,6 +13,9 @@ This migration implements per-user read tracking for stories, fixing the issue w
 ### 06: UserWords UpdatedAt Field Migration
 This migration adds an `UpdatedAt` field to the `UserWords` table to enable sorting the user's vocabulary timeline by last interaction time instead of first addition time.
 
+### 07: Multiple Explanations Support Migration
+This migration adds `WordCollectionId` to the `UserWords` table and updates the unique constraint to enable multiple AI-generated explanations per word with user-specific default selection.
+
 ## Migration Steps
 
 ### Phase 1: Analysis
@@ -220,3 +223,108 @@ After migration:
 - [ ] API returns both `CreatedAt` and `UpdatedAt` in response
 - [ ] All UserWords records have non-null `UpdatedAt` values
 - [ ] Performance improved (check query execution plans)
+
+---
+
+## Multiple Explanations Support Migration (07)
+
+### Overview
+Adds `WordCollectionId` to `UserWords` table and updates the unique constraint from `(UserId, WordExplanationId)` to `(UserId, WordCollectionId)`. This enables the system to store multiple AI-generated explanations per word (from different models) while allowing each user to choose their preferred default explanation.
+
+### Design Principles
+- **Shared Explanations**: All users benefit from AI-generated explanations (no per-user generation)
+- **Only Add, Never Delete**: `RefreshExplanation` creates new records, preserving history
+- **Smart Model Selection**: Automatically uses next unused AI model when refreshing
+- **User-Specific Default**: Each user can select their preferred explanation version
+
+### Migration Steps
+
+#### Phase 1: Run Migration Script
+1. **Run migration:**
+   ```sql
+   source 07_multiple_explanations.sql
+   ```
+   - Adds `WordCollectionId` column to `UserWords`
+   - Populates from existing `WordExplanation` relationships
+   - **Step 4**: Dynamically finds and drops FK constraints (no hardcoded names)
+   - **Step 5**: Drops old unique index `UQ_UserWords_UserId_WordId`
+   - **Step 6**: Creates new unique index `UQ_UserWords_UserId_WordCollectionId` (ASC)
+   - **Step 7**: Adds performance index on `WordCollectionId`
+   - **Step 8**: Recreates FK constraints (checks existence first)
+   - Fully idempotent - safe to run multiple times
+   - Environment-agnostic - works with any FK naming convention
+
+#### Phase 2: Code Already Deployed
+2. **Backend changes:**
+   - `UserWord`: Added `WordCollectionId` field
+   - `ExplanationsResponse`: New DTO for multiple explanations
+   - `VocabularyService.RefreshUserWordExplanationAsync`: Rewritten to create new records
+   - `VocabularyService.GetAllExplanationsForWordAsync`: New method
+   - `VocabularyService.SwitchUserDefaultExplanationAsync`: New method
+   - New API endpoints for browsing and switching explanations
+
+3. **Frontend changes:**
+   - `ExplanationsResponse` entity
+   - API and service layer methods
+   - `VocabularyProvider`: Caching and switching logic
+   - `WordDetailScreen`: Version navigator, default indicator, browsing UI
+
+### Key Changes
+
+#### Database Schema:
+- **Before:** `UserWords` uniquely identified by `(UserId, WordExplanationId)`
+- **After:** `UserWords` uniquely identified by `(UserId, WordCollectionId)`
+- **Migration Process:** Drops FK → Drops old index → Creates new index → Recreates FK
+- **Impact:** One UserWord per user per word, but WordExplanationId can change
+
+#### API Behavior:
+- **Before:** `RefreshExplanation` updated existing record in-place
+- **After:** `RefreshExplanation` creates new `WordExplanation` record with different model
+- **New Endpoints:**
+  - `GET /vocabulary/explanations/{wordCollectionId}/{learningLanguage}/{explanationLanguage}` - Get all versions
+  - `PUT /vocabulary/switch-explanation/{wordCollectionId}/{explanationId}` - Switch default
+
+#### User Experience:
+- **Before:** One explanation per word, refresh overwrites
+- **After:** Multiple explanations browsable, user picks favorite
+
+### Benefits
+
+1. **Diverse Perspectives**: Users see explanations from multiple AI models
+2. **No Data Loss**: Historical explanations preserved
+3. **User Choice**: Each user picks their preferred explanation style
+4. **Shared Resources**: All users benefit from generated explanations
+5. **Smart Generation**: Automatically uses next unused model
+
+### Data Integrity
+
+The migration ensures:
+- All existing `UserWords` get valid `WordCollectionId` from their current `WordExplanation`
+- Unique constraint prevents duplicate entries
+- Foreign key relationships remain valid
+- No data loss during constraint change
+
+### Migration Robustness
+
+Key improvements for production safety:
+- **Dynamic FK Discovery**: Queries actual FK names from `INFORMATION_SCHEMA` instead of hardcoding
+- **No sql_notes Suppression**: Clean error handling without hiding warnings
+- **Environment Agnostic**: Works with any FK naming convention (ORM-generated or custom)
+- **Index Optimization**: Uses default ASC for simplicity and consistency
+- **Full Idempotency**: Every step checks existence before action
+
+### Testing Checklist
+
+After migration:
+- [ ] All UserWords have valid `WordCollectionId` set
+- [ ] Unique constraint `UQ_UserWords_UserId_WordCollectionId` exists
+- [ ] Old index `UQ_UserWords_UserId_WordId` removed
+- [ ] Foreign key constraints properly recreated
+- [ ] No data inconsistencies (check verification query)
+- [ ] Can browse multiple explanations in word detail screen
+- [ ] Can switch default explanation
+- [ ] Refresh creates new explanation (doesn't overwrite)
+- [ ] Refresh uses next unused AI model
+- [ ] UI shows version navigator (1/3, 2/3, etc)
+- [ ] Default explanation marked with star
+- [ ] Cache invalidation works after refresh/switch

@@ -447,6 +447,30 @@ public class LanguageService(IConfigurationService configurationService, ILogger
     }
 
     /// <summary>
+    /// Get markdown explanation using a specific agent (no fallback).
+    /// Used when refreshing explanations to generate from a specific model.
+    /// </summary>
+    public async Task<string> GetMarkdownExplanationAsync(
+        Agent agent,
+        string wordText,
+        string learningLanguageInEnglish,
+        string explanationLanguageInEnglish)
+    {
+        var result = await GetMarkdownExplanationAsync(
+            wordText,
+            explanationLanguageInEnglish,
+            learningLanguageInEnglish,
+            agent);
+
+        if (!result.IsSuccess)
+        {
+            throw new Exception($"Failed to generate explanation with {agent.Provider}:{agent.ModelName}: {result.ErrorMessage}");
+        }
+
+        return result.Markdown ?? string.Empty;
+    }
+
+    /// <summary>
     /// Detects the language of the given text and returns LanguageDetectionResult that contains the language code along with the confidence level.
     /// This method uses the existing LLM client for language detection.
     /// </summary>
