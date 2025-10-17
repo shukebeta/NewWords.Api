@@ -343,18 +343,25 @@ namespace NewWords.Api.Services
             var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
                 uw.UserId == userId && uw.WordExplanationId == explanationToReturn.Id);
 
+            var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
             if (userWord == null)
             {
                 var newUserWord = new UserWord
                 {
                     UserId = userId,
+                    WordCollectionId = explanationToReturn.WordCollectionId,
                     WordExplanationId = explanationToReturn.Id,
                     Status = 0,
-                    CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
+                    CreatedAt = currentTime,
+                    UpdatedAt = currentTime
                 };
                 await userWordRepository.InsertAsync(newUserWord);
                 return newUserWord;
             }
+
+            // Word exists - update UpdatedAt to move it to front of timeline
+            userWord.UpdatedAt = currentTime;
+            await userWordRepository.UpdateAsync(userWord);
 
             return userWord;
         }
@@ -644,6 +651,73 @@ namespace NewWords.Api.Services
             return timestamps.OrderBy(t => t).ToArray();
         }
 
-        // ...existing code...
+        public async Task<Models.DTOs.Vocabulary.ExplanationsResponse> GetAllExplanationsForWordAsync(
+            int userId,
+            long wordCollectionId,
+            string learningLanguage,
+            string explanationLanguage)
+        {
+            // Get all explanations for this word
+            var explanations = await wordExplanationRepository.GetListAsync(we =>
+                we.WordCollectionId == wordCollectionId &&
+                we.LearningLanguage == learningLanguage &&
+                we.ExplanationLanguage == explanationLanguage);
+
+            // Order by creation time (newest first)
+            var orderedExplanations = explanations
+                .OrderByDescending(e => e.CreatedAt)
+                .ToList();
+
+            logger.LogInformation($"Found {orderedExplanations.Count} explanations for word collection {wordCollectionId}");
+
+            // Get user's default explanation ID
+            var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
+                uw.UserId == userId &&
+                uw.WordCollectionId == wordCollectionId);
+
+            return new Models.DTOs.Vocabulary.ExplanationsResponse
+            {
+                Explanations = orderedExplanations,
+                UserDefaultExplanationId = userWord?.WordExplanationId
+            };
+        }
+
+        public async Task SwitchUserDefaultExplanationAsync(
+            int userId,
+            long wordCollectionId,
+            long newExplanationId)
+        {
+            // Validate: explanation exists and matches word collection
+            var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == newExplanationId);
+            if (explanation == null)
+            {
+                logger.LogWarning($"Explanation not found - ExplanationId: {newExplanationId}");
+                throw new ArgumentException("Explanation not found");
+            }
+
+            if (explanation.WordCollectionId != wordCollectionId)
+            {
+                logger.LogWarning($"Explanation {newExplanationId} does not belong to word collection {wordCollectionId}");
+                throw new InvalidOperationException("Explanation does not belong to this word");
+            }
+
+            // Update user's default
+            var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
+                uw.UserId == userId &&
+                uw.WordCollectionId == wordCollectionId);
+
+            if (userWord == null)
+            {
+                logger.LogWarning($"User word not found - UserId: {userId}, WordCollectionId: {wordCollectionId}");
+                throw new ArgumentException("User word not found");
+            }
+
+            userWord.WordExplanationId = newExplanationId;
+            userWord.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            await userWordRepository.UpdateAsync(userWord);
+
+            logger.LogInformation($"Switched default explanation for user {userId}, word collection {wordCollectionId} to explanation {newExplanationId}");
+        }
     }
 }
