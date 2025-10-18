@@ -63,7 +63,58 @@ SELECT IF(@column_nullable = 'YES',
     'WordCollectionId is already NOT NULL') as Step3_Status;
 
 -- ============================================================================
--- Step 4: Dynamically find and drop ALL foreign keys first
+-- Step 4: Drop unique constraint on WordExplanations (allow multiple explanations per word)
+-- ============================================================================
+SET @word_exp_unique_exists = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'WordExplanations'
+      AND INDEX_NAME = 'UQ_Words_Text_Lang_NativeLang'
+);
+
+SET @drop_word_exp_unique_sql = IF(
+    @word_exp_unique_exists > 0,
+    'ALTER TABLE WordExplanations DROP INDEX UQ_Words_Text_Lang_NativeLang',
+    'SELECT 1'  -- No-op
+);
+
+PREPARE stmt FROM @drop_word_exp_unique_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SELECT IF(@word_exp_unique_exists > 0,
+    'Dropped unique index from WordExplanations: UQ_Words_Text_Lang_NativeLang',
+    'Unique index on WordExplanations does not exist') as Step4_Status;
+
+-- ============================================================================
+-- Step 5: Create new unique index on WordExplanations (including ProviderModelName)
+-- ============================================================================
+-- This allows multiple explanations per word (one per model)
+SET @new_word_exp_unique_exists = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'WordExplanations'
+      AND INDEX_NAME = 'UQ_WordExplanations_Collection_Languages_Provider'
+);
+
+SET @create_word_exp_unique_sql = IF(
+    @new_word_exp_unique_exists = 0,
+    'ALTER TABLE WordExplanations ADD UNIQUE INDEX UQ_WordExplanations_Collection_Languages_Provider (WordCollectionId, LearningLanguage, ExplanationLanguage, ProviderModelName)',
+    'SELECT 1'  -- No-op
+);
+
+PREPARE stmt FROM @create_word_exp_unique_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SELECT IF(@new_word_exp_unique_exists = 0,
+    'Created new unique index on WordExplanations with ProviderModelName',
+    'New unique index on WordExplanations already exists') as Step5_Status;
+
+-- ============================================================================
+-- Step 6: Dynamically find and drop ALL foreign keys on UserWords
 -- ============================================================================
 -- Find all FK constraints on UserWords table
 SET @fk_names = (
@@ -117,10 +168,10 @@ PREPARE stmt FROM @drop_fk2_sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-SELECT CONCAT('Dropped foreign keys: ', IFNULL(@fk_names, 'None found')) as Step4_Status;
+SELECT CONCAT('Dropped foreign keys: ', IFNULL(@fk_names, 'None found')) as Step6_Status;
 
 -- ============================================================================
--- Step 5: Drop old unique constraint (now safe after FK removal)
+-- Step 7: Drop old unique constraint (now safe after FK removal)
 -- ============================================================================
 SET @old_index_exists = (
     SELECT COUNT(*)
@@ -142,10 +193,10 @@ DEALLOCATE PREPARE stmt;
 
 SELECT IF(@old_index_exists > 0,
     'Dropped old index: UQ_UserWords_UserId_WordId',
-    'Old index does not exist') as Step5_Status;
+    'Old index does not exist') as Step7_Status;
 
 -- ============================================================================
--- Step 6: Create new unique constraint if it doesn't exist
+-- Step 8: Create new unique constraint if it doesn't exist
 -- ============================================================================
 SET @new_index_exists = (
     SELECT COUNT(*)
@@ -168,10 +219,10 @@ DEALLOCATE PREPARE stmt;
 
 SELECT IF(@new_index_exists = 0,
     'Created new index: UQ_UserWords_UserId_WordCollectionId',
-    'New index already exists') as Step6_Status;
+    'New index already exists') as Step8_Status;
 
 -- ============================================================================
--- Step 7: Add index on WordCollectionId for better join performance
+-- Step 9: Add index on WordCollectionId for better join performance
 -- ============================================================================
 SET @wordcollection_index_exists = (
     SELECT COUNT(*)
@@ -193,10 +244,10 @@ DEALLOCATE PREPARE stmt;
 
 SELECT IF(@wordcollection_index_exists = 0,
     'Created index: IX_UserWords_WordCollectionId',
-    'Index already exists') as Step7_Status;
+    'Index already exists') as Step9_Status;
 
 -- ============================================================================
--- Step 8: Recreate foreign key constraint (if needed)
+-- Step 10: Recreate foreign key constraint (if needed)
 -- ============================================================================
 -- Check if FK already exists (using actual name, not hardcoded)
 SET @fk_exists = (
@@ -223,7 +274,7 @@ DEALLOCATE PREPARE stmt;
 
 SELECT IF(@fk_exists IS NULL,
     'Recreated foreign key: FK_UserWords_WordExplanations_WordExplanationId',
-    CONCAT('Foreign key already exists: ', @fk_exists)) as Step8_Status;
+    CONCAT('Foreign key already exists: ', @fk_exists)) as Step10_Status;
 
 -- ============================================================================
 -- Verification Queries

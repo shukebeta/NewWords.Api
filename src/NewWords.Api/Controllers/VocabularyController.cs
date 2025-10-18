@@ -155,7 +155,7 @@ namespace NewWords.Api.Controllers
         /// <param name="learningLanguage">Learning language code (e.g., "en", "zh")</param>
         /// <param name="explanationLanguage">Explanation language code</param>
         /// <returns>All explanations and user's default</returns>
-        [HttpGet("explanations/{wordCollectionId}/{learningLanguage}/{explanationLanguage}")]
+        [HttpGet("{wordCollectionId}/{learningLanguage}/{explanationLanguage}")]
         public async Task<ApiResult<ExplanationsResponse>> Explanations(
             long wordCollectionId,
             string learningLanguage,
@@ -181,7 +181,7 @@ namespace NewWords.Api.Controllers
         /// </summary>
         /// <param name="wordCollectionId">Word collection ID</param>
         /// <param name="wordExplanationId">New default explanation ID</param>
-        [HttpPut("switch-explanation/{wordCollectionId}/{wordExplanationId}")]
+        [HttpPut("{wordCollectionId}/{wordExplanationId}")]
         public async Task<ApiResult> SwitchExplanation(
             long wordCollectionId,
             long wordExplanationId)

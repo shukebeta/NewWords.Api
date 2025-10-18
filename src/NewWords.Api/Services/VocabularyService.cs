@@ -230,62 +230,87 @@ namespace NewWords.Api.Services
         public async Task<WordExplanation> RefreshUserWordExplanationAsync(long wordExplanationId)
         {
             // 1. Get current explanation
-            var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
-            if (explanation == null)
+            var currentExplanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
+            if (currentExplanation == null)
             {
                 logger.LogWarning($"Word explanation not found for refresh - WordExplanationId: {wordExplanationId}");
                 throw new ArgumentException("Word explanation not found");
             }
 
-            // 2. Get current first agent
-            var firstAgent = configurationService.Agents.FirstOrDefault();
-            if (firstAgent == null)
+            // 2. Get all existing explanations for this word
+            var existingExplanations = await wordExplanationRepository.GetListAsync(we =>
+                we.WordCollectionId == currentExplanation.WordCollectionId &&
+                we.LearningLanguage == currentExplanation.LearningLanguage &&
+                we.ExplanationLanguage == currentExplanation.ExplanationLanguage);
+
+            // 3. Extract used model names
+            var usedModels = existingExplanations
+                .Select(e => e.ProviderModelName)
+                .Where(m => !string.IsNullOrEmpty(m))
+                .ToHashSet();
+
+            logger.LogInformation($"Found {usedModels.Count} existing models for word '{currentExplanation.WordText}': {string.Join(", ", usedModels)}");
+
+            // 4. Find next unused agent
+            var availableAgents = configurationService.Agents;
+            var nextAgent = availableAgents.FirstOrDefault(agent =>
             {
-                logger.LogError("No agents configured for word explanation refresh");
-                throw new InvalidOperationException("No agents configured");
+                var modelIdentifier = $"{agent.Provider}:{agent.ModelName}";
+                return !usedModels.Contains(modelIdentifier);
+            });
+
+            if (nextAgent == null)
+            {
+                logger.LogWarning($"All available models have been used for word '{currentExplanation.WordText}'");
+                throw new InvalidOperationException("All available models have been used for this word");
             }
 
-            var currentFirstAgentName = $"{firstAgent.Provider}:{firstAgent.ModelName}";
+            logger.LogInformation($"Selected next unused agent: {nextAgent.Provider}:{nextAgent.ModelName}");
 
-            // 3. Compare with existing provider model
-            if (currentFirstAgentName == explanation.ProviderModelName)
+            // 5. Get language names for AI prompt
+            var learningLangName = configurationService.GetLanguageName(currentExplanation.LearningLanguage);
+            var explanationLangName = configurationService.GetLanguageName(currentExplanation.ExplanationLanguage);
+
+            if (learningLangName == null || explanationLangName == null)
             {
-                logger.LogInformation($"Word explanation already uses current AI model, no refresh needed - WordExplanationId: {wordExplanationId}");
-                throw new InvalidOperationException("Word explanation is already up to date with the latest AI model");
-            }
-
-            // 4. Get language names for regeneration
-            var learningLanguageName = configurationService.GetLanguageName(explanation.LearningLanguage);
-            var explanationLanguageName = configurationService.GetLanguageName(explanation.ExplanationLanguage);
-
-            if (learningLanguageName == null || explanationLanguageName == null)
-            {
-                logger.LogError($"Language names not found for refresh - LearningLanguage: {explanation.LearningLanguage}, ExplanationLanguage: {explanation.ExplanationLanguage}");
+                logger.LogError($"Language names not found - LearningLanguage: {currentExplanation.LearningLanguage}, ExplanationLanguage: {currentExplanation.ExplanationLanguage}");
                 throw new InvalidOperationException("Language names not found");
             }
 
-            // 5. Generate new explanation
-            var newExplanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(
-                explanation.WordText, explanationLanguageName, learningLanguageName);
-
-            // 6. Handle generation failure
-            if (!newExplanationResult.IsSuccess || string.IsNullOrWhiteSpace(newExplanationResult.Markdown))
+            // 6. Generate new explanation with specific agent
+            string newMarkdown;
+            try
             {
-                logger.LogWarning($"Failed to generate new explanation for word '{explanation.WordText}' - WordExplanationId: {wordExplanationId}, Error: {newExplanationResult.ErrorMessage}");
-                return explanation; // Return original on failure
+                newMarkdown = await languageService.GetMarkdownExplanationAsync(
+                    nextAgent,
+                    currentExplanation.WordText,
+                    learningLangName,
+                    explanationLangName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to generate explanation with {Provider}:{Model}", nextAgent.Provider, nextAgent.ModelName);
+                throw new InvalidOperationException($"Failed to generate explanation: {ex.Message}", ex);
             }
 
-            // 7. Update explanation
-            explanation.MarkdownExplanation = newExplanationResult.Markdown;
-            explanation.ProviderModelName = newExplanationResult.ModelName;
-            explanation.CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds();
+            // 7. Create new explanation record
+            var newExplanation = new WordExplanation
+            {
+                WordCollectionId = currentExplanation.WordCollectionId,
+                WordText = currentExplanation.WordText,
+                LearningLanguage = currentExplanation.LearningLanguage,
+                ExplanationLanguage = currentExplanation.ExplanationLanguage,
+                MarkdownExplanation = newMarkdown,
+                ProviderModelName = $"{nextAgent.Provider}:{nextAgent.ModelName}",
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            };
 
-            // 8. Save changes
-            await wordExplanationRepository.UpdateAsync(explanation);
+            var newExplanationId = await wordExplanationRepository.InsertReturnIdentityAsync(newExplanation);
+            newExplanation.Id = newExplanationId;
 
-            logger.LogInformation($"Successfully refreshed word explanation - WordExplanationId: {wordExplanationId}, Word: '{explanation.WordText}', NewProvider: {newExplanationResult.ModelName}");
+            logger.LogInformation($"Successfully created new explanation - ID: {newExplanationId}, Word: '{newExplanation.WordText}', Provider: {newExplanation.ProviderModelName}");
 
-            return explanation;
+            return newExplanation;
         }
 
         public async Task<IList<WordExplanation>> MemoriesAsync(int userId, string localTimezone)
