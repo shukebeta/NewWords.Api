@@ -36,6 +36,7 @@ namespace NewWords.Api.Services
                 .Select((we, uw) => new WordExplanation()
                 {
                     CreatedAt = uw.CreatedAt,
+                    UpdatedAt = uw.UpdatedAt,
                 }, true)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
