@@ -32,7 +32,7 @@ namespace NewWords.Api.Services
             var pagedWords = await db.Queryable<WordExplanation>()
                 .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
                 .Where((we, uw) => uw.UserId == userId)
-                .OrderBy((we, uw) => uw.CreatedAt, OrderByType.Desc)
+                .OrderBy((we, uw) => uw.UpdatedAt, OrderByType.Desc)
                 .Select((we, uw) => new WordExplanation()
                 {
                     CreatedAt = uw.CreatedAt,
