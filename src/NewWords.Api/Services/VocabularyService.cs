@@ -164,8 +164,9 @@ namespace NewWords.Api.Services
 
                 // Nothing to do here; commit/rollback handled where transaction was opened.
 
-                // Override CreatedAt with user's timestamp (when they learned the word)
+                // Override CreatedAt and UpdatedAt with user's timestamps for consistent display
                 explanation.CreatedAt = userWord.CreatedAt;
+                explanation.UpdatedAt = userWord.UpdatedAt;
                 
                 overallStopwatch.Stop();
                 logger.LogInformation("AddUserWordAsync completed successfully in {ElapsedMs}ms for user {UserId}, word '{WordText}'", 
