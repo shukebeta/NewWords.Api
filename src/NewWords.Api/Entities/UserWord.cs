@@ -8,8 +8,8 @@ namespace NewWords.Api.Entities
     /// including the user's learning status for that word.
     /// </summary>
     [SugarTable("UserWords")]
-    // Define the unique constraint for the combination of UserId and WordCollectionId
-    [SugarIndex("UQ_UserWords_UserId_WordCollectionId", nameof(UserId), OrderByType.Desc, nameof(WordCollectionId), OrderByType.Asc, true)]
+    // Define the unique constraint for the combination of UserId and WordExplanationId
+    [SugarIndex("UQ_UserWords_UserId_WordExplanationId", nameof(UserId), OrderByType.Desc, nameof(WordExplanationId), OrderByType.Asc, true)]
     public class UserWord
     {
         /// <summary>
