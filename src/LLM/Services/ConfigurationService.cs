@@ -6,6 +6,11 @@ namespace LLM.Services;
 public class ConfigurationService(IConfiguration configuration) : IConfigurationService
 {
     private readonly List<AgentConfig> _agentConfigs = configuration.GetSection("Agents").Get<List<AgentConfig>>() ?? [];
+
+    public IReadOnlyList<string> PreferredExplanationModels { get; } = configuration
+        .GetSection("Explanation:PreferredModels")
+        .Get<List<string>>() ?? [];
+
     private List<Agent>? _agents;
     private Dictionary<string, string>? _languageLookup;
 

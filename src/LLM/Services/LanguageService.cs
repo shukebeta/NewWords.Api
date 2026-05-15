@@ -1,8 +1,8 @@
-using System.Text.Json;
-using LLM.Models;
-using Flurl.Http;
-using Api.Framework.Options;
 using System.Diagnostics;
+using System.Text.Json;
+using Api.Framework.Options;
+using Flurl.Http;
+using LLM.Models;
 using Microsoft.Extensions.Logging;
 
 namespace LLM.Services;
@@ -12,6 +12,78 @@ namespace LLM.Services;
 /// </summary>
 public class LanguageService(IConfigurationService configurationService, ILogger<LanguageService> logger) : ILanguageService
 {
+    private const int ExplanationTimeoutSeconds = 12;
+    private const int MaxExplanationFallbacks = 1;
+
+    internal static string BuildExplanationSystemPrompt(string nativeLanguageName, string learningLanguageName)
+    {
+        return $$"""
+                 You are a multilingual language tutor with strong real-world cultural and usage knowledge.
+                 The user is a native {{nativeLanguageName}} speaker learning {{learningLanguageName}}.
+                 They may know dictionary meanings, but they need practical usage, nuance, and examples.
+
+                 Critical rules:
+                 - Write the whole response in {{nativeLanguageName}} except for {{learningLanguageName}} words, phrases, IPA, and example sentences.
+                 - Preserve the user's intent. If the input is a phrase, idiom, or comparison like "A vs B", explain the whole phrase or comparison instead of reducing it to one word.
+                 - Only silently correct the input when it is clearly a typo of a single {{learningLanguageName}} word. Never mention the typo.
+                 - If the input is not in {{learningLanguageName}}, say what it is usually called in {{learningLanguageName}} and explain the main usage differences if there are several options.
+                 - The first non-empty line must be only the canonical word or phrase in bold, for example **apple** or **fathom vs understand**. Put nothing else on that line.
+                 - No code blocks, no XML, no introductory filler, and no closing questions.
+
+                 Required output:
+                 - Use short markdown sections with paragraph breaks.
+                 - Include IPA when helpful.
+                 - Split clearly different meanings or senses.
+                 - Include a clear meaning/explanation section in {{nativeLanguageName}}.
+                 - Include an example sentences section for the queried word, phrase, or comparison itself. Provide 2 to 4 natural {{learningLanguageName}} examples, each followed by a concise {{nativeLanguageName}} translation or explanation.
+                 - Include a related words or phrases section with 3 to 5 relevant {{learningLanguageName}} items.
+                 - For each related item, include a short {{nativeLanguageName}} usage note; when possible, also include a very short {{learningLanguageName}} example sentence or usage snippet.
+                 - Add cultural context only when it materially helps understanding.
+
+                 Quality bar:
+                 - Prefer practical nuance, register, collocation, and common usage over abstract dictionary wording.
+                 - If there are several close alternatives, explain when to use each one.
+                 - Do not omit the example sentences section or the related words section unless the input makes that impossible.
+
+                 Examples:
+                 - Input: fathom vs understand -> first line: **fathom vs understand**
+                 - Input: ptofess -> first line: **profess**
+                 """;
+    }
+
+    internal static IReadOnlyList<Agent> SelectExplanationAgents(
+        IEnumerable<Agent> agents,
+        IEnumerable<string> preferredExplanationModels)
+    {
+        var allAgents = agents.ToList();
+        var agentsByModel = allAgents.ToLookup(agent => agent.ModelName, StringComparer.OrdinalIgnoreCase);
+        var selectedAgents = new List<Agent>();
+
+        foreach (var modelName in preferredExplanationModels)
+        {
+            var matchingAgent = agentsByModel[modelName].FirstOrDefault();
+            if (matchingAgent != null)
+            {
+                selectedAgents.Add(matchingAgent);
+            }
+        }
+
+        foreach (var agent in allAgents)
+        {
+            if (!selectedAgents.Contains(agent))
+            {
+                selectedAgents.Add(agent);
+            }
+        }
+
+        return selectedAgents;
+    }
+
+    private static double GetElapsedMilliseconds(Stopwatch stopwatch)
+    {
+        return Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1);
+    }
+
     /// <summary>
     /// Get Markdown formatted explanation using Flurl features
     /// </summary>
@@ -24,11 +96,18 @@ public class LanguageService(IConfigurationService configurationService, ILogger
         string inputText,
         string nativeLanguageName,
         string learningLanguageName,
-        Agent agent)
+        Agent agent,
+        int fallbackIndex)
     {
         var methodStopwatch = Stopwatch.StartNew();
-        logger.LogInformation("Starting GetMarkdownExplanationAsync for word '{InputText}' with agent {Provider}:{ModelName}",
-            inputText, agent.Provider, agent.ModelName);
+        var providerHttpMs = 0d;
+        var responseParseMs = 0d;
+        var httpStatusCode = default(int?);
+        var success = false;
+        var errorMessage = string.Empty;
+        var modelName = $"{agent.Provider}:{agent.ModelName}";
+        var userPrompt = $"My input is: {inputText}";
+        var systemPrompt = BuildExplanationSystemPrompt(nativeLanguageName, learningLanguageName);
 
         // Validate input
         if (string.IsNullOrEmpty(inputText))
@@ -40,151 +119,69 @@ public class LanguageService(IConfigurationService configurationService, ILogger
 
         try
         {
-            var stepStopwatch = Stopwatch.StartNew();
-            // Build the complete API endpoint
             var apiUrl = agent.BaseUrl.TrimEnd('/') + "/chat/completions";
-
-            // Build the prompt
-            var userPrompt = $"My input is: {inputText}";
-            var systemPrompt = $"""
-                                 <language_expert_prompt>
-                                     <role>
-                                         <description>You are a multilingual language expert with rich life experience in different linguistic and cultural environments. You understand the specific concepts and cultural connotations of various items, behaviors, and things in different languages.</description>
-                                         <user>My native language is {nativeLanguageName}, and I am learning {learningLanguageName}. I have no living experience in {learningLanguageName}-speaking countries/regions.</user>
-                                     </role>
-
-                                     <critical_instruction>
-                                         <output_language>You MUST respond strictly in {nativeLanguageName} regardless of what language the input text is. ALL explanations, descriptions, example translations, and related vocabulary must be in {nativeLanguageName}. This is the most important requirement.</output_language>
-                                         <input_preservation>If the user input contains multiple words, phrases, or comparisons (e.g., "A vs B"), you MUST respect the user's intent and explain the entire input, rather than correcting it to a single word.</input_preservation>
-                                     </critical_instruction>
-
-                                     <task>
-                                         <beforehand_check>
-                                             First, analyze the input text:
-                                             1. Is it a comparison (e.g., "fathom vs understand", "A and B")? If yes, treat it as a request to differentiate or explain both.
-                                             2. Is it a phrase/idiom? If yes, explain the whole phrase.
-                                             3. Is it a single word with a likely typo? Only THEN should you apply typo correction.
-                                             4. If the input is a valid word or phrase in {learningLanguageName}, possibly with a "vs" or similar connector, do NOT "correct" it to something simpler.
-                                         </beforehand_check>
-                                         <scenario_1>
-                                            <condition>If the input is specific to {learningLanguageName} (words, phrases, comparisons)</condition>
-                                 			<action>Explain the meaning of the input in {nativeLanguageName} in an easy-to-understand way, including its common meanings in different fields and contexts. Add cultural background if necessary. For comparisons ("A vs B"), explicitly explain the nuanced differences between them.</action>
-                                         </scenario_1>
-
-                                         <scenario_2>
-                                            <condition>If the input is clearly not in {learningLanguageName}, but in another language</condition>
-                                 			<action>Tell me in {nativeLanguageName} what the input is usually called in {learningLanguageName}. If there are multiple similar expressions, list them all and explain the usage scenarios.</action>
-                                         </scenario_2>
-                                     </task>
-
-                                     <format_requirements>
-                                         <structure>User input text with phonetic transcription + {nativeLanguageName} explanation + {learningLanguageName} example sentences + closely related {learningLanguageName} vocabulary and explanations</structure>
-                                         <multiple_meanings>If there are significantly different meanings, explain them separately</multiple_meanings>
-                                         <formatting>
-                                             <requirement>Clear paragraph breaks</requirement>
-                                             <requirement>Reasonable use of bold headings for easy reading</requirement>
-                                            <requirement>Do not use code block format, output markdown content directly</requirement>
-                                            <requirement>OUTPUT FORMAT RULE: The very first non-empty line MUST be the canonical word or phrase, wrapped in double asterisks, for example: **apple** or **fathom vs understand**. There must be no other text on that line.</requirement>
-                                         </formatting>
-                                         <typo_handling>
-                                            <critical_rule>Only correct the input if it is clearly a typo/misspelling and NOT a valid comparison or phrase. If corrected, use the corrected spelling.</critical_rule>
-                                            <examples>
-                                                <correct_approach>User types "fathom vs understand" → Output: **fathom vs understand** ... (Proceed to explain difference)</correct_approach>
-                                                <correct_approach>User types "ptofess" → Output: **profess** ...</correct_approach>
-                                            </examples>
-                                            <principle>Prioritize user's original intent if the input seems to be a valid question or comparison. Only "silently correct" clear nonsense/typos.</principle>
-                                         </typo_handling>
-                                     </format_requirements>
-
-                                     <response_example>
-                                         <native_to_target>**example word**
-                                 "example word" in German is generally called "Beispielwort" /ˈbaɪʃpiːlvɔʁt/
-
-                                 Other expressions:
-                                 - Musterwort /ˈmʊstɐvɔʁt/ - more formal expression
-                                 - Demowort /ˈdemoːvɔʁt/ - more colloquial expression</native_to_target>
-                                         <target_to_native>**example**
-                                 **example** /ɪɡˈzæmpl/ means "instance, illustration"
-
-                                 **Meaning explanation:**
-                                 It refers to a specific case used to illustrate or prove a point, rule, or concept. It has different applications in various fields.
-
-                                 **Example sentences:**
-                                 - Can you give me an example of how this works? (Can you give me an example of how this works?)
-                                 - This painting is a perfect example of Renaissance art. (This painting is a perfect example of Renaissance art.)
-                                 - For example, you could try using a different approach. (For example, you could try using a different approach.)
-
-                                 **Related vocabulary:**
-                                 - instance /ˈɪnstəns/: instance, more formal expression
-                                 - sample /ˈsæmpl/: sample, specimen
-                                 - illustration /ˌɪləˈstreɪʃn/: illustration, example
-                                 - case /keɪs/: case, situation</target_to_native>
-                                     </response_example>
-
-                                     <important_reminders>
-                                         1. If specific cultural concepts are involved, briefly provide cultural background, otherwise skip it directly without unnecessary elaboration
-                                         2. Use International Phonetic Alphabet (IPA) format
-                                         3. Do not include any introductory text or ask questions at the end
-                                         4. CRITICAL: If user input has typos, automatically use the correct spelling throughout your entire response. Never mention, reference, or acknowledge the typo in any way.
-                                     </important_reminders>
-                                 </language_expert_prompt>
-                                 """;
-
-            // Build the request body
-            var requestData = new
+            var requestData = new Dictionary<string, object?>
             {
-                model = agent.ModelName,
-                messages = new[]
+                ["model"] = agent.ModelName,
+                ["messages"] = new object[]
                 {
-                    new {role = "system", content = systemPrompt},
-                    new {role = "user", content = userPrompt}
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt }
                 },
-                temperature = 0.1f,
+                ["temperature"] = 0.1f
             };
 
-            stepStopwatch.Stop();
+            if (string.Equals(agent.Provider, "OpenRouter", StringComparison.OrdinalIgnoreCase))
+            {
+                requestData["reasoning"] = new
+                {
+                    effort = "none",
+                    exclude = true
+                };
+            }
 
-            // Use Flurl's fluent API to send request with proper error handling
-            stepStopwatch.Restart();
-            logger.LogInformation("Sending API request to {ApiUrl} for word '{InputText}'", apiUrl, inputText);
+            var providerStopwatch = Stopwatch.StartNew();
 
             var response = await apiUrl
                 .WithHeader("Authorization", $"Bearer {agent.ApiKey}")
-                .WithTimeout(TimeSpan.FromSeconds(30))
+                .WithTimeout(TimeSpan.FromSeconds(ExplanationTimeoutSeconds))
                 .AllowHttpStatus("4xx,5xx")
                 .PostJsonAsync(requestData);
 
-            stepStopwatch.Stop();
+            providerStopwatch.Stop();
+            providerHttpMs = GetElapsedMilliseconds(providerStopwatch);
+            httpStatusCode = (int)response.ResponseMessage.StatusCode;
 
             if (!response.ResponseMessage.IsSuccessStatusCode)
             {
                 var errorContent = await response.GetStringAsync();
-                methodStopwatch.Stop();
-                logger.LogWarning("API request failed after {TotalMs}ms for word '{InputText}', status: {StatusCode}, error: {ErrorContent}",
-                    methodStopwatch.ElapsedMilliseconds, inputText, response.ResponseMessage.StatusCode, errorContent);
+                errorMessage = $"HTTP {response.ResponseMessage.StatusCode}: {errorContent}";
+                logger.LogWarning("API request failed for word '{InputText}' with {ModelName}: {ErrorMessage}",
+                    inputText, modelName, errorMessage);
 
                 return new ExplanationResult
                 {
                     IsSuccess = false,
-                    ModelName = agent.ModelName,
-                    HttpStatusCode = (int)response.ResponseMessage.StatusCode,
-                    ErrorMessage = $"HTTP {response.ResponseMessage.StatusCode}: {errorContent}"
+                    ModelName = modelName,
+                    HttpStatusCode = httpStatusCode,
+                    ErrorMessage = errorMessage
                 };
             }
 
-            stepStopwatch.Restart();
+            var parseStopwatch = Stopwatch.StartNew();
             var apiResponse = await response.GetJsonAsync<ApiCompletionResponse>();
-            stepStopwatch.Stop();
+            parseStopwatch.Stop();
+            responseParseMs = GetElapsedMilliseconds(parseStopwatch);
 
-            // Parse the response with better validation
             if (apiResponse?.Choices == null || apiResponse.Choices.Length == 0)
             {
                 var fullResponse = JsonSerializer.Serialize(apiResponse);
+                errorMessage = $"API response contains no choices. Full response: {fullResponse}";
                 return new ExplanationResult
                 {
                     IsSuccess = false,
-                    ModelName = agent.ModelName,
-                    ErrorMessage = $"API response contains no choices. Full response: {fullResponse}"
+                    ModelName = modelName,
+                    ErrorMessage = errorMessage
                 };
             }
 
@@ -192,37 +189,58 @@ public class LanguageService(IConfigurationService configurationService, ILogger
             if (firstChoice?.Message?.Content == null || string.IsNullOrWhiteSpace(firstChoice.Message.Content))
             {
                 var fullResponse = JsonSerializer.Serialize(apiResponse);
+                errorMessage = $"API response choice contains no valid content. Full response: {fullResponse}";
                 return new ExplanationResult
                 {
                     IsSuccess = false,
-                    ModelName = agent.ModelName,
-                    ErrorMessage = $"API response choice contains no valid content. Full response: {fullResponse}"
+                    ModelName = modelName,
+                    ErrorMessage = errorMessage
                 };
             }
 
-            methodStopwatch.Stop();
-            logger.LogInformation("GetMarkdownExplanationAsync completed successfully in {TotalMs}ms for word '{InputText}' with {Provider}:{ModelName}",
-                methodStopwatch.ElapsedMilliseconds, inputText, agent.Provider, agent.ModelName);
+            success = true;
 
             return new ExplanationResult
             {
                 IsSuccess = true,
                 Markdown = firstChoice.Message.Content.Trim(),
-                ModelName = $"{agent.Provider}:{agent.ModelName}",
+                ModelName = modelName,
             };
         }
         catch (Exception ex)
         {
-            methodStopwatch.Stop();
-            logger.LogError(ex, "GetMarkdownExplanationAsync failed after {TotalMs}ms for word '{InputText}' with {Provider}:{ModelName}",
-                methodStopwatch.ElapsedMilliseconds, inputText, agent.Provider, agent.ModelName);
+            errorMessage = $"An exception occurred: {ex.Message}";
+            logger.LogError(ex, "GetMarkdownExplanationAsync failed for word '{InputText}' with {ModelName}",
+                inputText, modelName);
 
             return new ExplanationResult
             {
                 IsSuccess = false,
-                ModelName = agent.ModelName,
-                ErrorMessage = $"An exception occurred: {ex.Message}"
+                ModelName = modelName,
+                ErrorMessage = errorMessage
             };
+        }
+        finally
+        {
+            methodStopwatch.Stop();
+            logger.LogInformation(
+                "GetMarkdownExplanationAsync timing for word '{InputText}': model_name={ModelName}, fallback_index={FallbackIndex}, success={Success}, provider_http_ms={ProviderHttpMs}, response_parse_ms={ResponseParseMs}, total_ms={TotalMs}, system_prompt_chars={SystemPromptChars}, user_prompt_chars={UserPromptChars}, http_status={HttpStatusCode}",
+                inputText,
+                modelName,
+                fallbackIndex,
+                success,
+                providerHttpMs,
+                responseParseMs,
+                GetElapsedMilliseconds(methodStopwatch),
+                systemPrompt.Length,
+                userPrompt.Length,
+                httpStatusCode);
+
+            if (!success && !string.IsNullOrWhiteSpace(errorMessage))
+            {
+                logger.LogWarning("Explanation request did not succeed for word '{InputText}': model_name={ModelName}, fallback_index={FallbackIndex}, error={ErrorMessage}",
+                    inputText, modelName, fallbackIndex, errorMessage);
+            }
         }
     }
 
@@ -235,42 +253,68 @@ public class LanguageService(IConfigurationService configurationService, ILogger
         string targetLanguage)
     {
         var overallStopwatch = Stopwatch.StartNew();
-        logger.LogInformation("Starting AI explanation with fallback for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}",
-            inputText, nativeLanguage, targetLanguage);
-
-        ExplanationResult result = new ExplanationResult();
-        int agentIndex = 0;
-
-        foreach (var agent in configurationService.Agents)
+        var explanationAgents = SelectExplanationAgents(configurationService.Agents, configurationService.PreferredExplanationModels);
+        var attemptLimit = Math.Min(explanationAgents.Count, MaxExplanationFallbacks + 1);
+        var attempts = 0;
+        var lastModelName = string.Empty;
+        var lastFallbackIndex = -1;
+        var result = new ExplanationResult
         {
-            var agentStopwatch = Stopwatch.StartNew();
-            logger.LogInformation("Trying agent {AgentIndex} ({Provider}:{ModelName}) for word '{InputText}'",
-                agentIndex, agent.Provider, agent.ModelName, inputText);
+            IsSuccess = false,
+            ErrorMessage = "No explanation models are configured."
+        };
 
-            result = await GetMarkdownExplanationAsync(inputText, nativeLanguage, targetLanguage, agent);
-            agentStopwatch.Stop();
+        if (attemptLimit == 0)
+        {
+            overallStopwatch.Stop();
+            logger.LogError("GetMarkdownExplanationWithFallbackAsync cannot run for word '{InputText}' because no explanation models are configured",
+                inputText);
+            logger.LogInformation(
+                "GetMarkdownExplanationWithFallbackAsync timing for word '{InputText}': success={Success}, attempts={Attempts}, total_ms={TotalMs}, model_name={ModelName}, fallback_index={FallbackIndex}",
+                inputText,
+                false,
+                attempts,
+                GetElapsedMilliseconds(overallStopwatch),
+                lastModelName,
+                lastFallbackIndex);
+            return result;
+        }
+
+        for (var agentIndex = 0; agentIndex < attemptLimit; agentIndex++)
+        {
+            var agent = explanationAgents[agentIndex];
+            attempts++;
+            lastModelName = $"{agent.Provider}:{agent.ModelName}";
+            lastFallbackIndex = agentIndex;
+
+            result = await GetMarkdownExplanationAsync(inputText, nativeLanguage, targetLanguage, agent, agentIndex);
 
             if (result.IsSuccess)
             {
                 overallStopwatch.Stop();
-                logger.LogInformation("AI explanation succeeded with agent {AgentIndex} ({Provider}:{ModelName}) in {AgentMs}ms (total: {TotalMs}ms) for word '{InputText}'",
-                    agentIndex, agent.Provider, agent.ModelName, agentStopwatch.ElapsedMilliseconds, overallStopwatch.ElapsedMilliseconds, inputText);
+                logger.LogInformation(
+                    "GetMarkdownExplanationWithFallbackAsync timing for word '{InputText}': success={Success}, attempts={Attempts}, total_ms={TotalMs}, model_name={ModelName}, fallback_index={FallbackIndex}",
+                    inputText,
+                    true,
+                    attempts,
+                    GetElapsedMilliseconds(overallStopwatch),
+                    result.ModelName,
+                    agentIndex);
                 return result;
             }
-            else
-            {
-                logger.LogWarning("Agent {AgentIndex} ({Provider}:{ModelName}) failed in {AgentMs}ms for word '{InputText}': {ErrorMessage}",
-                    agentIndex, agent.Provider, agent.ModelName, agentStopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
-                logger.LogWarning("Model configuration suggestion: Consider removing or deprioritizing {Provider}:{ModelName} due to failure",
-                    agent.Provider, agent.ModelName);
-            }
-
-            agentIndex++;
         }
 
         overallStopwatch.Stop();
-        logger.LogError("All AI agents failed after {TotalMs}ms for word '{InputText}'. Last error: {ErrorMessage}",
-            overallStopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
+        logger.LogError("All preferred explanation models failed for word '{InputText}'. Last error: {ErrorMessage}",
+            inputText, result.ErrorMessage);
+        logger.LogInformation(
+            "GetMarkdownExplanationWithFallbackAsync timing for word '{InputText}': success={Success}, attempts={Attempts}, total_ms={TotalMs}, model_name={ModelName}, fallback_index={FallbackIndex}",
+            inputText,
+            false,
+            attempts,
+            GetElapsedMilliseconds(overallStopwatch),
+            lastModelName,
+            lastFallbackIndex);
 
         return result;
     }
@@ -465,7 +509,8 @@ public class LanguageService(IConfigurationService configurationService, ILogger
             wordText,
             explanationLanguageInEnglish,
             learningLanguageInEnglish,
-            agent);
+            agent,
+            0);
 
         if (!result.IsSuccess)
         {

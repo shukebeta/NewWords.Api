@@ -6,6 +6,7 @@ using NewWords.Api.Services;
 using Api.Framework;
 using LLM;
 using NewWords.Api.Repositories;
+using SqlSugar;
 
 namespace NewWords.Api.Tests.Services
 {

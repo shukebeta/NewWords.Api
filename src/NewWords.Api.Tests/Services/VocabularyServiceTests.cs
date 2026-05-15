@@ -105,7 +105,7 @@ namespace NewWords.Api.Tests.Services
         [InlineData("**apple**", "apple")]
         [InlineData("**take off** (phrasal verb)", "take off")]
         [InlineData("apple", "apple")]
-        [InlineData("Some text **apple**", "Some text **apple**")]
+        [InlineData("Some text **apple**", "apple")]
         [InlineData("", "")]
         [InlineData("**run**\n**walk**", "run")]
         [InlineData("**multi word phrase** - explanation", "multi word phrase")]

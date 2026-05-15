@@ -52,24 +52,32 @@ namespace NewWords.Api.Services
         public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string learningLanguageCode, string explanationLanguageCode)
         {
             var overallStopwatch = Stopwatch.StartNew();
+            var normalizeMs = 0d;
+            var localWordLookupMs = 0d;
+            var localExplanationLookupMs = 0d;
+            var llmTotalMs = 0d;
+            var canonicalExtractMs = 0d;
+            var transactionMs = 0d;
+            var userWordMs = 0d;
+            var modelName = string.Empty;
+            var llmSuccess = false;
+            var usedLocalExplanation = false;
             logger.LogInformation("Starting AddUserWordAsync for user {UserId}, word '{WordText}', learning: {LearningLanguage}, explanation: {ExplanationLanguage}",
                 userId, wordText, learningLanguageCode, explanationLanguageCode);
 
             try
             {
-                var stepStopwatch = Stopwatch.StartNew();
-
-                // Normalize input early
+                var normalizeStopwatch = Stopwatch.StartNew();
                 var wordTextTrimmed = NormalizeWord(wordText);
                 var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
                 var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
+                normalizeStopwatch.Stop();
+                normalizeMs = Math.Round(normalizeStopwatch.Elapsed.TotalMilliseconds, 1);
 
-                stepStopwatch.Stop();
-
-                // 2. Then check if there is a local explanation (original word)
-                stepStopwatch.Restart();
+                var localWordLookupStopwatch = Stopwatch.StartNew();
                 var localWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == wordTextTrimmed && wc.DeletedAt == null);
-                stepStopwatch.Stop();
+                localWordLookupStopwatch.Stop();
+                localWordLookupMs = Math.Round(localWordLookupStopwatch.Elapsed.TotalMilliseconds, 1);
 
                 WordExplanation? explanation = null;
                 long wordCollectionId = 0;
@@ -77,38 +85,43 @@ namespace NewWords.Api.Services
 
                 if (localWord != null)
                 {
-                    stepStopwatch.Restart();
+                    var localExplanationLookupStopwatch = Stopwatch.StartNew();
                     explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
                         we.WordCollectionId == localWord.Id &&
                         we.LearningLanguage == learningLanguageCode &&
                         we.ExplanationLanguage == explanationLanguageCode);
-                    stepStopwatch.Stop();
+                    localExplanationLookupStopwatch.Stop();
+                    localExplanationLookupMs = Math.Round(localExplanationLookupStopwatch.Elapsed.TotalMilliseconds, 1);
 
                     if (explanation != null)
                     {
                         wordCollectionId = localWord.Id;
+                        usedLocalExplanation = true;
                     }
                 }
 
-                // 3. 如果本地没有解释，调用AI（外部调用放在事务之外），提取标准词
                 ExplanationResult? aiResult = null;
                 if (explanation == null)
                 {
                     logger.LogInformation("No local explanation found for word '{WordText}', calling AI service", wordTextTrimmed);
 
-                    stepStopwatch.Restart();
+                    var llmStopwatch = Stopwatch.StartNew();
                     try
                     {
                         aiResult = await InvokeAiServiceAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
-                        stepStopwatch.Stop();
+                        llmStopwatch.Stop();
+                        llmTotalMs = Math.Round(llmStopwatch.Elapsed.TotalMilliseconds, 1);
+                        llmSuccess = aiResult?.IsSuccess ?? false;
+                        modelName = aiResult?.ModelName ?? string.Empty;
                         logger.LogInformation("AI call completed in {ElapsedMs}ms for word '{WordText}', success: {Success}",
-                            stepStopwatch.ElapsedMilliseconds, wordTextTrimmed, aiResult?.IsSuccess ?? false);
+                            llmStopwatch.ElapsedMilliseconds, wordTextTrimmed, llmSuccess);
                     }
                     catch (Exception ex)
                     {
-                        stepStopwatch.Stop();
+                        llmStopwatch.Stop();
+                        llmTotalMs = Math.Round(llmStopwatch.Elapsed.TotalMilliseconds, 1);
                         logger.LogWarning(ex, "AI call failed after {ElapsedMs}ms for word '{WordText}'; will fallback to user input as canonical word",
-                            stepStopwatch.ElapsedMilliseconds, wordTextTrimmed);
+                            llmStopwatch.ElapsedMilliseconds, wordTextTrimmed);
                         aiResult = new ExplanationResult { IsSuccess = false, ErrorMessage = ex.Message };
                     }
 
@@ -121,14 +134,14 @@ namespace NewWords.Api.Services
                     }
                     else
                     {
-                        stepStopwatch.Restart();
+                        var canonicalExtractStopwatch = Stopwatch.StartNew();
                         canonicalWord = ExtractCanonicalWordFromMarkdown(aiResult.Markdown);
                         if (string.IsNullOrWhiteSpace(canonicalWord)) canonicalWord = wordTextTrimmed;
-                        stepStopwatch.Stop();
+                        canonicalExtractStopwatch.Stop();
+                        canonicalExtractMs = Math.Round(canonicalExtractStopwatch.Elapsed.TotalMilliseconds, 1);
                     }
 
-                    // Run DB updates in a short, well-scoped transaction helper
-                    stepStopwatch.Restart();
+                    var transactionStopwatch = Stopwatch.StartNew();
                     try
                     {
                         await TransactionHelper.ExecuteInTransactionAsync(db, async () =>
@@ -141,34 +154,49 @@ namespace NewWords.Api.Services
                             explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId, aiResult);
                             handleExplanationStart.Stop();
                         }, logger);
-                        stepStopwatch.Stop();
+                        transactionStopwatch.Stop();
+                        transactionMs = Math.Round(transactionStopwatch.Elapsed.TotalMilliseconds, 1);
                     }
                     catch (Exception ex)
                     {
-                        stepStopwatch.Stop();
+                        transactionStopwatch.Stop();
+                        transactionMs = Math.Round(transactionStopwatch.Elapsed.TotalMilliseconds, 1);
                         logger.LogError(ex, "Database transaction block failed for word '{WordText}'", wordTextTrimmed);
                         throw;
                     }
                 }
 
-                // 4. Handle UserWord
-                stepStopwatch.Restart();
                 if (explanation == null)
                 {
                     logger.LogError("Explanation unexpectedly null after DB transaction for word '{WordText}'", wordTextTrimmed);
                     throw new InvalidOperationException("Explanation is null after expected creation");
                 }
 
+                var userWordStopwatch = Stopwatch.StartNew();
                 var userWord = await _HandleUserWord(userId, explanation);
-                stepStopwatch.Stop();
+                userWordStopwatch.Stop();
+                userWordMs = Math.Round(userWordStopwatch.Elapsed.TotalMilliseconds, 1);
 
-                // Nothing to do here; commit/rollback handled where transaction was opened.
-
-                // Override CreatedAt and UpdatedAt with user's timestamps for consistent display
                 explanation.CreatedAt = userWord.CreatedAt;
                 explanation.UpdatedAt = userWord.UpdatedAt;
 
                 overallStopwatch.Stop();
+                logger.LogInformation(
+                    "AddUserWordAsync timing for user {UserId}, word '{WordText}': normalize_ms={NormalizeMs}, local_word_lookup_ms={LocalWordLookupMs}, local_explanation_lookup_ms={LocalExplanationLookupMs}, llm_total_ms={LlmTotalMs}, canonical_extract_ms={CanonicalExtractMs}, transaction_ms={TransactionMs}, userword_ms={UserWordMs}, total_ms={TotalMs}, model_name={ModelName}, success={Success}, llm_success={LlmSuccess}, used_local_explanation={UsedLocalExplanation}",
+                    userId,
+                    wordTextTrimmed,
+                    normalizeMs,
+                    localWordLookupMs,
+                    localExplanationLookupMs,
+                    llmTotalMs,
+                    canonicalExtractMs,
+                    transactionMs,
+                    userWordMs,
+                    Math.Round(overallStopwatch.Elapsed.TotalMilliseconds, 1),
+                    modelName,
+                    true,
+                    llmSuccess,
+                    usedLocalExplanation);
                 logger.LogInformation("AddUserWordAsync completed successfully in {ElapsedMs}ms for user {UserId}, word '{WordText}'",
                     overallStopwatch.ElapsedMilliseconds, userId, wordTextTrimmed);
 
@@ -177,6 +205,22 @@ namespace NewWords.Api.Services
             catch (Exception ex) // Catch exceptions from ExecuteInTransactionAsync or input validation
             {
                 overallStopwatch.Stop();
+                logger.LogInformation(
+                    "AddUserWordAsync timing for user {UserId}, word '{WordText}': normalize_ms={NormalizeMs}, local_word_lookup_ms={LocalWordLookupMs}, local_explanation_lookup_ms={LocalExplanationLookupMs}, llm_total_ms={LlmTotalMs}, canonical_extract_ms={CanonicalExtractMs}, transaction_ms={TransactionMs}, userword_ms={UserWordMs}, total_ms={TotalMs}, model_name={ModelName}, success={Success}, llm_success={LlmSuccess}, used_local_explanation={UsedLocalExplanation}",
+                    userId,
+                    wordText,
+                    normalizeMs,
+                    localWordLookupMs,
+                    localExplanationLookupMs,
+                    llmTotalMs,
+                    canonicalExtractMs,
+                    transactionMs,
+                    userWordMs,
+                    Math.Round(overallStopwatch.Elapsed.TotalMilliseconds, 1),
+                    modelName,
+                    false,
+                    llmSuccess,
+                    usedLocalExplanation);
                 logger.LogError(ex, "AddUserWordAsync failed after {ElapsedMs}ms for user {UserId}, word '{WordText}'",
                     overallStopwatch.ElapsedMilliseconds, userId, wordText);
                 throw;
