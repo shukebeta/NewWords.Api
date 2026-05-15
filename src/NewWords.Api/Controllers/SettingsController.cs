@@ -1,9 +1,9 @@
 using Api.Framework;
 using Api.Framework.Extensions;
 using Api.Framework.Result;
-using AutoMapper;
 using NewWords.Api.Models.DTOs;
 using NewWords.Api.Entities;
+using NewWords.Api.Mappers;
 using NewWords.Api.Services.interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Api.Framework.Helper;
@@ -15,7 +15,6 @@ namespace NewWords.Api.Controllers;
 
 [Authorize]
 public class SettingsController(
-    IMapper mapper,
     ICurrentUser currentUser,
     IRepositoryBase<UserSettings> userSettingsRepository,
     IConfigurationService configurationService)
@@ -48,7 +47,9 @@ public class SettingsController(
             }).ToList();
         }
 
-        return new SuccessfulResult<List<UserSettingsDto>>(mapper.Map<List<UserSettingsDto>>(settings));
+        // Keep response mapping explicit so DTO shape changes fail visibly in code review.
+        var settingsDtos = settings.Select(UserSettingsMappings.ToDto).ToList();
+        return new SuccessfulResult<List<UserSettingsDto>>(settingsDtos);
     }
 
     [HttpPost]
@@ -80,6 +81,8 @@ public class SettingsController(
         }
         else
         {
+            // Create the persistence model explicitly so API fields stay separate from server-owned fields.
+            // If UserSettingsDto gains new writeable fields later, review this initializer instead of relying on implicit mapping.
             var newSetting = new UserSettings
             {
                 UserId = userId,
