@@ -55,7 +55,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddCors(SetupCors(builder));
 ConfigAuthentication(builder);
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAutoMapper(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile));
+builder.Services.AddAutoMapper(_ => { }, typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile));
 builder.Services.RegisterServices(builder.Configuration);
 
 var app = builder.Build();
