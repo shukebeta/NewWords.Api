@@ -26,6 +26,13 @@ public class ConfigurationSubscriberService : BackgroundService
     {
         _logger.LogInformation("Configuration Subscriber Service starting");
 
+        if (string.IsNullOrWhiteSpace(_redisOptions.ConnectionString) ||
+            string.IsNullOrWhiteSpace(_redisOptions.ProjectPrefix))
+        {
+            _logger.LogInformation("Configuration Subscriber Service disabled because Redis settings are incomplete");
+            return;
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try

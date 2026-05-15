@@ -100,21 +100,4 @@ public class SettingsController(
     {
         return new SuccessfulResult<List<Language>>(configurationService.SupportedLanguages);
     }
-
-    [HttpGet("debug/config")]
-    [AllowAnonymous]
-    public ApiResult<Dictionary<string, string?>> DebugConfig(IConfiguration configuration)
-    {
-        // Show all configuration keys for debugging Redis integration
-        var allConfig = new Dictionary<string, string?>();
-        foreach (var kvp in configuration.AsEnumerable())
-        {
-            if (!string.IsNullOrEmpty(kvp.Value))
-            {
-                allConfig[kvp.Key] = kvp.Value;
-            }
-        }
-
-        return new SuccessfulResult<Dictionary<string, string?>>(allConfig);
-    }
 }
