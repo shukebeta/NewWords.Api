@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
+using NewWords.Api.Helpers;
 using NewWords.Api.Options;
 using NLog;
-using NLog.Config;
 using StackExchange.Redis;
 
 namespace NewWords.Api.Services;
@@ -64,7 +64,8 @@ public class ConfigurationSubscriberService : BackgroundService
 
     private async Task ConnectToRedis()
     {
-        _logger.LogInformation("Connecting to Redis: {ConnectionString}", _redisOptions.ConnectionString);
+        var redisDescription = NLogDynamicConfiguration.DescribeRedisConnection(_redisOptions.ConnectionString);
+        _logger.LogInformation("Connecting to Redis endpoints: {RedisEndpoints}", redisDescription);
         
         _redis = await ConnectionMultiplexer.ConnectAsync(_redisOptions.ConnectionString);
         _subscriber = _redis.GetSubscriber();
@@ -172,36 +173,15 @@ public class ConfigurationSubscriberService : BackgroundService
                         return;
                     }
 
-                    // Check if seq target exists - without centralized logging, dynamic adjustment is pointless
-                    var seqTarget = config.FindTargetByName("seq");
-                    if (seqTarget == null)
+                    var applied = NLogDynamicConfiguration.TryApplyMinLevel(config, "dynamic-app-logs", newLevel);
+                    if (!applied)
                     {
-                        _logger.LogError("Cannot update log level: No 'seq' target found. Dynamic log level adjustment requires centralized logging to be useful.");
+                        _logger.LogError("Cannot update log level because no fallback logging targets are configured");
                         return;
                     }
 
-                    // Find or create the dynamic logging rule
-                    var dynamicRule = config.LoggingRules.FirstOrDefault(r => r.RuleName == "dynamic-app-logs");
-                    if (dynamicRule == null)
-                    {
-                        // Create new rule with seq target only
-                        dynamicRule = new NLog.Config.LoggingRule("*", seqTarget);
-                        dynamicRule.RuleName = "dynamic-app-logs";
-                        dynamicRule.SetLoggingLevels(newLevel, NLog.LogLevel.Fatal);
-                        config.LoggingRules.Add(dynamicRule);
-                        
-                        _logger.LogInformation("Created new dynamic logging rule for centralized logging with level: {Level}", newLevel);
-                    }
-                    else
-                    {
-                        dynamicRule.SetLoggingLevels(newLevel, NLog.LogLevel.Fatal);
-                        _logger.LogInformation("Updated dynamic logging rule level to: {Level}", newLevel);
-                    }
-
                     LogManager.ReconfigExistingLoggers();
-                    
-                    // Test the new log level
-                    TestLogLevels();
+                    _logger.LogInformation("Updated dynamic logging rule level to: {Level}", newLevel);
                 }
             }
             else
@@ -215,24 +195,13 @@ public class ConfigurationSubscriberService : BackgroundService
         }
     }
 
-    private void TestLogLevels()
-    {
-        var nlogLogger = LogManager.GetCurrentClassLogger();
-        nlogLogger.Trace("TEST: This is a TRACE message after level update");
-        nlogLogger.Debug("TEST: This is a DEBUG message after level update");
-        nlogLogger.Info("TEST: This is an INFO message after level update");
-        nlogLogger.Warn("TEST: This is a WARN message after level update");
-        nlogLogger.Error("TEST: This is an ERROR message after level update");
-        nlogLogger.Fatal("TEST: This is a FATAL message after level update");
-    }
-
     private async Task LoadCurrentConfigValues()
     {
         try
         {
             _logger.LogInformation("Loading current configuration values from Redis");
             
-            var database = _redis!.GetDatabase();
+            var database = _redis!.GetDatabase(_redisOptions.Database);
             
             // Load NLog level configuration
             var nlogLevelKey = $"{_redisOptions.ProjectPrefix}:config:nlog:minlevel";
