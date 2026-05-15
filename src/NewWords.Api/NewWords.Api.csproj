@@ -22,7 +22,7 @@
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
     <PackageReference Include="NLog.Web.AspNetCore" Version="5.3.9" />
     <PackageReference Include="NLog.Targets.Seq" Version="4.0.0" />
-    <ProjectReference Include="..\Api.Framework\Api.Framework.csproj" />
+    <PackageReference Include="Shukebeta.Api.Framework" Version="1.0.0" />
     <ProjectReference Include="..\LLM\LLM.csproj" />
   </ItemGroup>
 
@@ -33,6 +33,12 @@
     <None Update="appsettings.Local.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>NewWords.Api.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

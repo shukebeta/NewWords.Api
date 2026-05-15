@@ -1,5 +1,6 @@
 using Api.Framework.Models;
 using NewWords.Api.Entities;
+using NewWords.Api.Models.DTOs.Vocabulary;
 
 namespace NewWords.Api.Services.interfaces
 {
@@ -11,5 +12,7 @@ namespace NewWords.Api.Services.interfaces
         Task<WordExplanation> RefreshUserWordExplanationAsync(long wordExplanationId);
         Task<IList<WordExplanation>> MemoriesAsync(int userId, string localTimezone);
         Task<IList<WordExplanation>> MemoriesOnAsync(int userId, string localTimezone, string yyyyMMdd);
+        Task<ExplanationsResponse> GetAllExplanationsForWordAsync(int userId, long wordCollectionId, string learningLanguage, string explanationLanguage);
+        Task SwitchUserDefaultExplanationAsync(int userId, long wordCollectionId, long newExplanationId);
     }
 }

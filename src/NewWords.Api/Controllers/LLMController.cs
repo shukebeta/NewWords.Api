@@ -18,6 +18,7 @@ namespace NewWords.Api.Controllers;
 public class LlmController(
     ILanguageService languageService,
     ISqlSugarClient dbClient,
+    IConfigurationService configurationService,
     ILogger<LlmController> logger)
     : BaseController
 {
@@ -43,7 +44,9 @@ public class LlmController(
         if (string.IsNullOrEmpty(text)) return Fail("Text parameter is required.");
         if (string.IsNullOrEmpty(targetLanguage)) return Fail("Target language parameter is required.");
 
-        var explanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(text, "zh-CN", targetLanguage);
+        var nativeLanguageName = configurationService.GetLanguageName("zh-CN") ?? "Chinese (Simplified)";
+        var targetLanguageName = configurationService.GetLanguageName(targetLanguage) ?? targetLanguage;
+        var explanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(text, nativeLanguageName, targetLanguageName);
         if (explanationResult.IsSuccess && explanationResult.Markdown != null)
         {
             return new SuccessfulResult<string>(explanationResult.Markdown);
@@ -67,8 +70,8 @@ public class LlmController(
     [ProducesResponseType(typeof(FailedResult), 500)]
     public async Task<ApiResult> FillWordExplanationsTable()
     {
-        const string NativeLanguage = "zh-CN"; // Target language for explanations
-        const string LearnLanguage = "en";      // User's learning language
+        const string NativeLanguageCode = "zh-CN";
+        const string LearnLanguageCode = "en";
         const int BATCH_SIZE = 50;
 
         long totalProcessed = 0;
@@ -77,7 +80,10 @@ public class LlmController(
         try
         {
             logger.LogInformation("Starting FillWordExplanationsTable process for TargetExplanationLanguage: {TargetLang}, LearningLanguage: {LearnLang}",
-                NativeLanguage, LearnLanguage);
+                NativeLanguageCode, LearnLanguageCode);
+
+            var nativeLanguageName = configurationService.GetLanguageName(NativeLanguageCode) ?? "Chinese (Simplified)";
+            var learningLanguageName = configurationService.GetLanguageName(LearnLanguageCode) ?? "English";
 
             long currentLastId = 0; // Start from the beginning of WordCollection
             List<WordCollection> wordCollectionBatch;
@@ -114,13 +120,13 @@ public class LlmController(
 
                     // Check if an explanation already exists for this WordCollectionId and TargetExplanationLanguage
                     bool explanationExists = await dbClient.Queryable<WordExplanation>()
-                        .AnyAsync(we => we.WordCollectionId == wcRecord.Id && we.ExplanationLanguage == NativeLanguage);
+                        .AnyAsync(we => we.WordCollectionId == wcRecord.Id && we.ExplanationLanguage == NativeLanguageCode);
 
                     if (explanationExists)
                     {
                         skippedExisting++;
                         logger.LogDebug("Skipping WordCollection ID: {Id}, Text: {Text}. Explanation already exists for language {TargetLang}.",
-                                         wcRecord.Id, wcRecord.WordText, NativeLanguage);
+                                         wcRecord.Id, wcRecord.WordText, NativeLanguageCode);
                         continue;
                     }
 
@@ -128,7 +134,10 @@ public class LlmController(
                     try
                     {
 
-                        var explanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(wcRecord.WordText, NativeLanguage, LearnLanguage);
+                        var explanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(
+                            wcRecord.WordText,
+                            nativeLanguageName,
+                            learningLanguageName);
 
                         if (explanationResult.IsSuccess && !string.IsNullOrWhiteSpace(explanationResult.Markdown))
                         {
@@ -136,8 +145,8 @@ public class LlmController(
                             {
                                 WordCollectionId = wcRecord.Id,
                                 WordText = wcRecord.WordText, // Denormalized
-                                LearningLanguage = LearnLanguage, // User's learning language
-                                ExplanationLanguage = NativeLanguage,
+                                LearningLanguage = LearnLanguageCode, // User's learning language
+                                ExplanationLanguage = NativeLanguageCode,
                                 MarkdownExplanation = explanationResult.Markdown,
                                 CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
                                 ProviderModelName = $"{explanationResult.ModelName}"

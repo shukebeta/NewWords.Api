@@ -9,6 +9,7 @@ using LLM.Models;
 using LLM.Services;
 using NewWords.Api.Services.interfaces;
 using System.Globalization;
+using System.Diagnostics;
 
 namespace NewWords.Api.Services
 {
@@ -31,10 +32,11 @@ namespace NewWords.Api.Services
             var pagedWords = await db.Queryable<WordExplanation>()
                 .RightJoin<UserWord>((we, uw) => we.Id == uw.WordExplanationId)
                 .Where((we, uw) => uw.UserId == userId)
-                .OrderBy((we, uw) => uw.CreatedAt, OrderByType.Desc)
+                .OrderBy((we, uw) => uw.UpdatedAt, OrderByType.Desc)
                 .Select((we, uw) => new WordExplanation()
                 {
                     CreatedAt = uw.CreatedAt,
+                    UpdatedAt = uw.UpdatedAt,
                 }, true)
                 .ToPageListAsync(pageNumber, pageSize, totalCount);
 
@@ -49,34 +51,211 @@ namespace NewWords.Api.Services
 
         public async Task<WordExplanation> AddUserWordAsync(int userId, string wordText, string learningLanguageCode, string explanationLanguageCode)
         {
+            var overallStopwatch = Stopwatch.StartNew();
+            var normalizeMs = 0d;
+            var localWordLookupMs = 0d;
+            var localExplanationLookupMs = 0d;
+            var llmTotalMs = 0d;
+            var canonicalExtractMs = 0d;
+            var transactionMs = 0d;
+            var userWordMs = 0d;
+            var modelName = string.Empty;
+            var llmSuccess = false;
+            var usedLocalExplanation = false;
+            logger.LogInformation("Starting AddUserWordAsync for user {UserId}, word '{WordText}', learning: {LearningLanguage}, explanation: {ExplanationLanguage}",
+                userId, wordText, learningLanguageCode, explanationLanguageCode);
+
             try
             {
-                await db.AsTenant().BeginTranAsync();
+                var normalizeStopwatch = Stopwatch.StartNew();
+                var wordTextTrimmed = NormalizeWord(wordText);
+                var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
+                var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
+                normalizeStopwatch.Stop();
+                normalizeMs = Math.Round(normalizeStopwatch.Elapsed.TotalMilliseconds, 1);
 
-                // 1. 先用AI纠正单词（如有必要）
-                // 这里假设调用AI服务获取标准词，实际项目应在Controller或Service上层先拿到AI结果
-                // 这里演示：先用原始输入查本地解释，若无则调用AI
-                var canonicalWord = wordText;
-                var wordCollectionId = await _HandleWordCollection(wordText, canonicalWord);
+                var localWordLookupStopwatch = Stopwatch.StartNew();
+                var localWord = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == wordTextTrimmed && wc.DeletedAt == null);
+                localWordLookupStopwatch.Stop();
+                localWordLookupMs = Math.Round(localWordLookupStopwatch.Elapsed.TotalMilliseconds, 1);
 
-                // 2. Handle WordExplanation (Explanation Cache)
-                var explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId);
+                WordExplanation? explanation = null;
+                long wordCollectionId = 0;
+                string canonicalWord = wordTextTrimmed;
 
-                // 3. Handle UserWord
+                if (localWord != null)
+                {
+                    var localExplanationLookupStopwatch = Stopwatch.StartNew();
+                    explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
+                        we.WordCollectionId == localWord.Id &&
+                        we.LearningLanguage == learningLanguageCode &&
+                        we.ExplanationLanguage == explanationLanguageCode);
+                    localExplanationLookupStopwatch.Stop();
+                    localExplanationLookupMs = Math.Round(localExplanationLookupStopwatch.Elapsed.TotalMilliseconds, 1);
+
+                    if (explanation != null)
+                    {
+                        wordCollectionId = localWord.Id;
+                        usedLocalExplanation = true;
+                    }
+                }
+
+                ExplanationResult? aiResult = null;
+                if (explanation == null)
+                {
+                    logger.LogInformation("No local explanation found for word '{WordText}', calling AI service", wordTextTrimmed);
+
+                    var llmStopwatch = Stopwatch.StartNew();
+                    try
+                    {
+                        aiResult = await InvokeAiServiceAsync(wordTextTrimmed, explanationLanguageName, learningLanguageName);
+                        llmStopwatch.Stop();
+                        llmTotalMs = Math.Round(llmStopwatch.Elapsed.TotalMilliseconds, 1);
+                        llmSuccess = aiResult?.IsSuccess ?? false;
+                        modelName = aiResult?.ModelName ?? string.Empty;
+                        logger.LogInformation("AI call completed in {ElapsedMs}ms for word '{WordText}', success: {Success}",
+                            llmStopwatch.ElapsedMilliseconds, wordTextTrimmed, llmSuccess);
+                    }
+                    catch (Exception ex)
+                    {
+                        llmStopwatch.Stop();
+                        llmTotalMs = Math.Round(llmStopwatch.Elapsed.TotalMilliseconds, 1);
+                        logger.LogWarning(ex, "AI call failed after {ElapsedMs}ms for word '{WordText}'; will fallback to user input as canonical word",
+                            llmStopwatch.ElapsedMilliseconds, wordTextTrimmed);
+                        aiResult = new ExplanationResult { IsSuccess = false, ErrorMessage = ex.Message };
+                    }
+
+                    if (aiResult == null || !aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
+                    {
+                        // Do not throw here; fall back to user input to avoid failing whole transaction
+                        logger.LogWarning("AI explanation unavailable for '{WordText}': {ErrorMessage}. Falling back to original word",
+                            wordTextTrimmed, aiResult?.ErrorMessage ?? "empty response");
+                        canonicalWord = wordTextTrimmed;
+                    }
+                    else
+                    {
+                        var canonicalExtractStopwatch = Stopwatch.StartNew();
+                        canonicalWord = ExtractCanonicalWordFromMarkdown(aiResult.Markdown);
+                        if (string.IsNullOrWhiteSpace(canonicalWord)) canonicalWord = wordTextTrimmed;
+                        canonicalExtractStopwatch.Stop();
+                        canonicalExtractMs = Math.Round(canonicalExtractStopwatch.Elapsed.TotalMilliseconds, 1);
+                    }
+
+                    var transactionStopwatch = Stopwatch.StartNew();
+                    try
+                    {
+                        await TransactionHelper.ExecuteInTransactionAsync(db, async () =>
+                        {
+                            var handleWordCollectionStart = Stopwatch.StartNew();
+                            wordCollectionId = await _HandleWordCollection(wordTextTrimmed, canonicalWord);
+                            handleWordCollectionStart.Stop();
+
+                            var handleExplanationStart = Stopwatch.StartNew();
+                            explanation = await _HandleExplanation(canonicalWord, learningLanguageCode, explanationLanguageCode, wordCollectionId, aiResult);
+                            handleExplanationStart.Stop();
+                        }, logger);
+                        transactionStopwatch.Stop();
+                        transactionMs = Math.Round(transactionStopwatch.Elapsed.TotalMilliseconds, 1);
+                    }
+                    catch (Exception ex)
+                    {
+                        transactionStopwatch.Stop();
+                        transactionMs = Math.Round(transactionStopwatch.Elapsed.TotalMilliseconds, 1);
+                        logger.LogError(ex, "Database transaction block failed for word '{WordText}'", wordTextTrimmed);
+                        throw;
+                    }
+                }
+
+                if (explanation == null)
+                {
+                    logger.LogError("Explanation unexpectedly null after DB transaction for word '{WordText}'", wordTextTrimmed);
+                    throw new InvalidOperationException("Explanation is null after expected creation");
+                }
+
+                var userWordStopwatch = Stopwatch.StartNew();
                 var userWord = await _HandleUserWord(userId, explanation);
+                userWordStopwatch.Stop();
+                userWordMs = Math.Round(userWordStopwatch.Elapsed.TotalMilliseconds, 1);
 
-                await db.AsTenant().CommitTranAsync();
-
-                // Override CreatedAt with user's timestamp (when they learned the word)
                 explanation.CreatedAt = userWord.CreatedAt;
+                explanation.UpdatedAt = userWord.UpdatedAt;
+
+                overallStopwatch.Stop();
+                logger.LogInformation(
+                    "AddUserWordAsync timing for user {UserId}, word '{WordText}': normalize_ms={NormalizeMs}, local_word_lookup_ms={LocalWordLookupMs}, local_explanation_lookup_ms={LocalExplanationLookupMs}, llm_total_ms={LlmTotalMs}, canonical_extract_ms={CanonicalExtractMs}, transaction_ms={TransactionMs}, userword_ms={UserWordMs}, total_ms={TotalMs}, model_name={ModelName}, success={Success}, llm_success={LlmSuccess}, used_local_explanation={UsedLocalExplanation}",
+                    userId,
+                    wordTextTrimmed,
+                    normalizeMs,
+                    localWordLookupMs,
+                    localExplanationLookupMs,
+                    llmTotalMs,
+                    canonicalExtractMs,
+                    transactionMs,
+                    userWordMs,
+                    Math.Round(overallStopwatch.Elapsed.TotalMilliseconds, 1),
+                    modelName,
+                    true,
+                    llmSuccess,
+                    usedLocalExplanation);
+                logger.LogInformation("AddUserWordAsync completed successfully in {ElapsedMs}ms for user {UserId}, word '{WordText}'",
+                    overallStopwatch.ElapsedMilliseconds, userId, wordTextTrimmed);
+
                 return explanation;
             }
-            catch (Exception ex) // Catch exceptions from UseTranAsync or input validation
+            catch (Exception ex) // Catch exceptions from ExecuteInTransactionAsync or input validation
             {
-                await db.AsTenant().RollbackTranAsync();
-                logger.LogError(ex, $"Error in AddUserWordAsync for user {userId}, word '{wordText}': Rollback.");
+                overallStopwatch.Stop();
+                logger.LogInformation(
+                    "AddUserWordAsync timing for user {UserId}, word '{WordText}': normalize_ms={NormalizeMs}, local_word_lookup_ms={LocalWordLookupMs}, local_explanation_lookup_ms={LocalExplanationLookupMs}, llm_total_ms={LlmTotalMs}, canonical_extract_ms={CanonicalExtractMs}, transaction_ms={TransactionMs}, userword_ms={UserWordMs}, total_ms={TotalMs}, model_name={ModelName}, success={Success}, llm_success={LlmSuccess}, used_local_explanation={UsedLocalExplanation}",
+                    userId,
+                    wordText,
+                    normalizeMs,
+                    localWordLookupMs,
+                    localExplanationLookupMs,
+                    llmTotalMs,
+                    canonicalExtractMs,
+                    transactionMs,
+                    userWordMs,
+                    Math.Round(overallStopwatch.Elapsed.TotalMilliseconds, 1),
+                    modelName,
+                    false,
+                    llmSuccess,
+                    usedLocalExplanation);
+                logger.LogError(ex, "AddUserWordAsync failed after {ElapsedMs}ms for user {UserId}, word '{WordText}'",
+                    overallStopwatch.ElapsedMilliseconds, userId, wordText);
                 throw;
             }
+        }
+
+    /// <summary>
+    /// Extract the canonical word from the first line of AI markdown (e.g. "**apple**" -> "apple")
+    /// </summary>
+    internal string ExtractCanonicalWordFromMarkdown(string markdown)
+        {
+            if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+            var firstLine = markdown.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => !string.IsNullOrEmpty(l));
+            if (!string.IsNullOrEmpty(firstLine))
+            {
+                // Prefer the first bold block **...** on the first non-empty line
+                var start = firstLine.IndexOf("**", StringComparison.Ordinal);
+                if (start >= 0)
+                {
+                    var end = firstLine.IndexOf("**", start + 2, StringComparison.Ordinal);
+                    if (end > start + 1)
+                    {
+                        var candidate = firstLine.Substring(start + 2, end - (start + 2)).Trim();
+                        if (!string.IsNullOrEmpty(candidate)) return candidate;
+                    }
+                }
+
+                // Fallback: strip basic markdown characters and take the first token
+                var cleaned = firstLine.Replace("**", "").Replace("*", "").Replace("`", "").Replace("#", "").Trim();
+                var tokens = cleaned.Split(new[] { ' ', '\t', '-', '—', '\u2014', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length > 0) return tokens[0].Trim();
+            }
+
+            // As a last resort, return trimmed whole markdown
+            return markdown.Trim();
         }
 
         public async Task DelUserWordAsync(int userId, long wordExplanationId)
@@ -97,62 +276,105 @@ namespace NewWords.Api.Services
         public async Task<WordExplanation> RefreshUserWordExplanationAsync(long wordExplanationId)
         {
             // 1. Get current explanation
-            var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
-            if (explanation == null)
+            var currentExplanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == wordExplanationId);
+            if (currentExplanation == null)
             {
                 logger.LogWarning($"Word explanation not found for refresh - WordExplanationId: {wordExplanationId}");
                 throw new ArgumentException("Word explanation not found");
             }
 
-            // 2. Get current first agent
-            var firstAgent = configurationService.Agents.FirstOrDefault();
-            if (firstAgent == null)
+            // 2. Get all existing explanations for this word
+            var existingExplanations = await wordExplanationRepository.GetListAsync(we =>
+                we.WordCollectionId == currentExplanation.WordCollectionId &&
+                we.LearningLanguage == currentExplanation.LearningLanguage &&
+                we.ExplanationLanguage == currentExplanation.ExplanationLanguage);
+
+            // 3. Extract used model names
+            var usedModels = existingExplanations
+                .Select(e => e.ProviderModelName)
+                .Where(m => !string.IsNullOrEmpty(m))
+                .ToHashSet();
+
+            logger.LogInformation($"Found {usedModels.Count} existing models for word '{currentExplanation.WordText}': {string.Join(", ", usedModels)}");
+
+            // 4. Find all suitable unused agents
+            var availableAgents = configurationService.Agents;
+
+            // Filter to get only agents that haven't been used yet
+            var unusedAgents = availableAgents
+                .Where(agent => !usedModels.Contains($"{agent.Provider}:{agent.ModelName}"))
+                .ToList();
+
+            if (!unusedAgents.Any())
             {
-                logger.LogError("No agents configured for word explanation refresh");
-                throw new InvalidOperationException("No agents configured");
+                logger.LogWarning($"All available models have been used for word '{currentExplanation.WordText}'");
+                throw new InvalidOperationException("All available models have been used for this word");
             }
 
-            var currentFirstAgentName = $"{firstAgent.Provider}:{firstAgent.ModelName}";
+            // 5. Get language names for AI prompt
+            var learningLangName = configurationService.GetLanguageName(currentExplanation.LearningLanguage);
+            var explanationLangName = configurationService.GetLanguageName(currentExplanation.ExplanationLanguage);
 
-            // 3. Compare with existing provider model
-            if (currentFirstAgentName == explanation.ProviderModelName)
+            if (learningLangName == null || explanationLangName == null)
             {
-                logger.LogInformation($"Word explanation already uses current AI model, no refresh needed - WordExplanationId: {wordExplanationId}");
-                throw new InvalidOperationException("Word explanation is already up to date with the latest AI model");
-            }
-
-            // 4. Get language names for regeneration
-            var learningLanguageName = configurationService.GetLanguageName(explanation.LearningLanguage);
-            var explanationLanguageName = configurationService.GetLanguageName(explanation.ExplanationLanguage);
-
-            if (learningLanguageName == null || explanationLanguageName == null)
-            {
-                logger.LogError($"Language names not found for refresh - LearningLanguage: {explanation.LearningLanguage}, ExplanationLanguage: {explanation.ExplanationLanguage}");
+                logger.LogError($"Language names not found - LearningLanguage: {currentExplanation.LearningLanguage}, ExplanationLanguage: {currentExplanation.ExplanationLanguage}");
                 throw new InvalidOperationException("Language names not found");
             }
 
-            // 5. Generate new explanation
-            var newExplanationResult = await languageService.GetMarkdownExplanationWithFallbackAsync(
-                explanation.WordText, explanationLanguageName, learningLanguageName);
+            // 6. Try to generate explanation with unused agents one by one
+            string newMarkdown = string.Empty;
+            Agent? successfullyUsedAgent = null;
 
-            // 6. Handle generation failure
-            if (!newExplanationResult.IsSuccess || string.IsNullOrWhiteSpace(newExplanationResult.Markdown))
+            foreach (var agent in unusedAgents)
             {
-                logger.LogWarning($"Failed to generate new explanation for word '{explanation.WordText}' - WordExplanationId: {wordExplanationId}, Error: {newExplanationResult.ErrorMessage}");
-                return explanation; // Return original on failure
+                try
+                {
+                    logger.LogInformation($"Attempting refresh with agent: {agent.Provider}:{agent.ModelName}");
+
+                    newMarkdown = await languageService.GetMarkdownExplanationAsync(
+                        agent,
+                        currentExplanation.WordText,
+                        learningLangName,
+                        explanationLangName);
+
+                    if (!string.IsNullOrWhiteSpace(newMarkdown))
+                    {
+                        successfullyUsedAgent = agent;
+                        break; // Success!
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to refresh explanation with {Provider}:{Model}. Will try next available agent.",
+                        agent.Provider, agent.ModelName);
+                    // Continue to next agent
+                }
             }
 
-            // 7. Update explanation
-            explanation.MarkdownExplanation = newExplanationResult.Markdown;
-            explanation.ProviderModelName = newExplanationResult.ModelName;
-            explanation.CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds();
+            if (successfullyUsedAgent == null || string.IsNullOrWhiteSpace(newMarkdown))
+            {
+                logger.LogError($"Failed to refresh explanation for '{currentExplanation.WordText}' with any of the {unusedAgents.Count} unused agents.");
+                throw new InvalidOperationException("Failed to refresh explanation with any available unused agent.");
+            }
 
-            // 8. Save changes
-            await wordExplanationRepository.UpdateAsync(explanation);
+            // 7. Create new explanation record
+            var newExplanation = new WordExplanation
+            {
+                WordCollectionId = currentExplanation.WordCollectionId,
+                WordText = currentExplanation.WordText,
+                LearningLanguage = currentExplanation.LearningLanguage,
+                ExplanationLanguage = currentExplanation.ExplanationLanguage,
+                MarkdownExplanation = newMarkdown,
+                ProviderModelName = $"{successfullyUsedAgent.Provider}:{successfullyUsedAgent.ModelName}",
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            };
 
-            logger.LogInformation($"Successfully refreshed word explanation - WordExplanationId: {wordExplanationId}, Word: '{explanation.WordText}', NewProvider: {newExplanationResult.ModelName}");
+            var newExplanationId = await wordExplanationRepository.InsertReturnIdentityAsync(newExplanation);
+            newExplanation.Id = newExplanationId;
 
-            return explanation;
+            logger.LogInformation($"Successfully created new explanation - ID: {newExplanationId}, Word: '{newExplanation.WordText}', Provider: {newExplanation.ProviderModelName}");
+
+            return newExplanation;
         }
 
         public async Task<IList<WordExplanation>> MemoriesAsync(int userId, string localTimezone)
@@ -210,24 +432,32 @@ namespace NewWords.Api.Services
             var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
                 uw.UserId == userId && uw.WordExplanationId == explanationToReturn.Id);
 
+            var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
             if (userWord == null)
             {
                 var newUserWord = new UserWord
                 {
                     UserId = userId,
+                    WordCollectionId = explanationToReturn.WordCollectionId,
                     WordExplanationId = explanationToReturn.Id,
                     Status = 0,
-                    CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds()
+                    CreatedAt = currentTime,
+                    UpdatedAt = currentTime
                 };
                 await userWordRepository.InsertAsync(newUserWord);
                 return newUserWord;
             }
 
+            // Word exists - update UpdatedAt to move it to front of timeline
+            userWord.UpdatedAt = currentTime;
+            await userWordRepository.UpdateAsync(userWord);
+
             return userWord;
         }
 
+
         private async Task<WordExplanation> _HandleExplanation(string wordText, string learningLanguageCode, string explanationLanguageCode,
-            long wordCollectionId)
+            long wordCollectionId, ExplanationResult? aiResult)
         {
             var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we =>
                 we.WordCollectionId == wordCollectionId &&
@@ -235,18 +465,17 @@ namespace NewWords.Api.Services
                 we.ExplanationLanguage == explanationLanguageCode);
 
             if (explanation is not null) return explanation;
-            var learningLanguageName = configurationService.GetLanguageName(learningLanguageCode)!;
-            var explanationLanguageName = configurationService.GetLanguageName(explanationLanguageCode)!;
-            var explanationResult =
-                await languageService.GetMarkdownExplanationWithFallbackAsync(wordText, explanationLanguageName, learningLanguageName);
 
-            if (!explanationResult.IsSuccess || string.IsNullOrWhiteSpace(explanationResult.Markdown))
+            // Use the provided AI result instead of calling AI again
+            if (aiResult == null || !aiResult.IsSuccess || string.IsNullOrWhiteSpace(aiResult.Markdown))
             {
-                logger.LogError(
-                    $"Failed to get explanation from AI for word '{wordText}': {explanationResult.ErrorMessage}");
-                throw new Exception(
-                    $"Failed to get explanation from AI: {explanationResult.ErrorMessage ?? "AI returned empty markdown."}");
+                logger.LogError("AI result is null or failed for word '{WordText}': {ErrorMessage}",
+                    wordText, aiResult?.ErrorMessage ?? "null result");
+                throw new Exception($"Failed to get explanation from AI: {aiResult?.ErrorMessage ?? "AI result is null"}");
             }
+
+            logger.LogInformation("Reusing AI result for word '{WordText}' from provider {Provider}",
+                wordText, aiResult.ModelName);
 
             var newExplanation = new WordExplanation
             {
@@ -254,16 +483,15 @@ namespace NewWords.Api.Services
                 WordText = wordText,
                 LearningLanguage = learningLanguageCode,
                 ExplanationLanguage = explanationLanguageCode,
-                MarkdownExplanation = explanationResult.Markdown,
-                ProviderModelName = explanationResult.ModelName,
+                MarkdownExplanation = aiResult.Markdown,
+                ProviderModelName = aiResult.ModelName,
                 CreatedAt = DateTime.UtcNow.ToUnixTimeSeconds(),
             };
             var newExplanationId = await wordExplanationRepository.InsertReturnIdentityAsync(newExplanation);
-            newExplanation.Id = newExplanationId; // Assign the returned ID to the entity's Id property
-            explanation = newExplanation;
-
-            return explanation;
+            newExplanation.Id = newExplanationId;
+            return newExplanation;
         }
+        // ...existing code...
 
         /// <summary>
         /// 处理单词规范化：如果AI纠正了用户输入，确保WordCollection只保留标准词。
@@ -274,8 +502,8 @@ namespace NewWords.Api.Services
         private async Task<long> EnsureCanonicalWordAsync(string userInput, string canonicalWord)
         {
             var currentTime = DateTime.UtcNow.ToUnixTimeSeconds();
-            userInput = userInput.Trim();
-            canonicalWord = canonicalWord.Trim();
+            userInput = NormalizeWord(userInput);
+            canonicalWord = NormalizeWord(canonicalWord);
 
             // 查找错词和标准词
             var wrongEntry = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == userInput && wc.DeletedAt == null);
@@ -283,7 +511,7 @@ namespace NewWords.Api.Services
 
             if (correctEntry != null)
             {
-                // 标准词已存在，软删除错词
+                // Canonical word exists, soft-delete the typo entry
                 if (wrongEntry != null && wrongEntry.WordText != canonicalWord)
                 {
                     wrongEntry.DeletedAt = currentTime;
@@ -293,7 +521,7 @@ namespace NewWords.Api.Services
             }
             else if (wrongEntry != null && wrongEntry.WordText != canonicalWord)
             {
-                // 标准词不存在，直接更新错词为标准词
+                // Canonical word does not exist, update typo entry to canonical word
                 wrongEntry.WordText = canonicalWord;
                 wrongEntry.UpdatedAt = currentTime;
                 await wordCollectionRepository.UpdateAsync(wrongEntry);
@@ -301,7 +529,7 @@ namespace NewWords.Api.Services
             }
             else if (wrongEntry != null)
             {
-                // 用户输入本身就是标准词
+                // User input is already the canonical word
                 wrongEntry.QueryCount++;
                 wrongEntry.UpdatedAt = currentTime;
                 await wordCollectionRepository.UpdateAsync(wrongEntry);
@@ -309,29 +537,92 @@ namespace NewWords.Api.Services
             }
             else
             {
-                // 两者都不存在，插入标准词
+                // 两者都不存在，插入标准词（并发时尝试插入失败则重查）
                 return await _AddWordCollection(canonicalWord, currentTime);
             }
         }
 
-        // 修改原有_HandleWordCollection，增加canonicalWord参数
-        private async Task<long> _HandleWordCollection(string userInput, string canonicalWord = null)
+        // Modified original _HandleWordCollection, added canonicalWord parameter
+        private async Task<long> _HandleWordCollection(string userInput, string? canonicalWord = null)
         {
-            // 若未指定canonicalWord，默认与userInput一致
+            // If canonicalWord is not specified, default to userInput
             canonicalWord ??= userInput;
             return await EnsureCanonicalWordAsync(userInput, canonicalWord);
         }
 
+        /// <summary>
+        /// Normalize word text for consistent comparisons and storage
+        /// </summary>
+        private static string NormalizeWord(string word)
+        {
+            if (string.IsNullOrWhiteSpace(word)) return string.Empty;
+            return word.Trim().ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// Call AI with limited retries and return ExplanationResult. This wraps the ILanguageService call.
+        /// </summary>
+        private async Task<ExplanationResult> InvokeAiServiceAsync(string inputText, string nativeLanguageName, string targetLanguageName)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            logger.LogInformation("Starting AI call (invoke+fallback) for word '{InputText}', native: {NativeLanguage}, target: {TargetLanguage}",
+                inputText, nativeLanguageName, targetLanguageName);
+
+            try
+            {
+                var result = await languageService.GetMarkdownExplanationWithFallbackAsync(inputText, nativeLanguageName, targetLanguageName);
+                stopwatch.Stop();
+
+                if (result.IsSuccess)
+                {
+                    logger.LogInformation("AI call succeeded in {ElapsedMs}ms for word '{InputText}', provider: {ProviderModel}",
+                        stopwatch.ElapsedMilliseconds, inputText, result.ModelName);
+                }
+                else
+                {
+                    logger.LogWarning("AI call failed in {ElapsedMs}ms for word '{InputText}', error: {ErrorMessage}",
+                        stopwatch.ElapsedMilliseconds, inputText, result.ErrorMessage);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                logger.LogWarning(ex, "AI call threw exception after {ElapsedMs}ms for word '{InputText}'",
+                    stopwatch.ElapsedMilliseconds, inputText);
+                return new ExplanationResult { IsSuccess = false, Markdown = string.Empty, ErrorMessage = ex.Message };
+            }
+        }
+
         private async Task<long> _AddWordCollection(string wordText, long currentTime)
         {
+            // Ensure the word text is normalized before insert
+            var normalized = NormalizeWord(wordText);
             var newCollectionWord = new WordCollection
             {
-                WordText = wordText,
+                WordText = normalized,
                 QueryCount = 1,
                 CreatedAt = currentTime,
                 UpdatedAt = currentTime
             };
-            return await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
+
+            try
+            {
+                return await wordCollectionRepository.InsertReturnIdentityAsync(newCollectionWord);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Insert WordCollection failed for '{WordText}'; attempting to re-query existing record", normalized);
+                // Likely a duplicate-key caused by concurrent insert; try to find existing record
+                var existing = await wordCollectionRepository.GetFirstOrDefaultAsync(wc => wc.WordText == normalized && wc.DeletedAt == null);
+                if (existing != null)
+                {
+                    return existing.Id;
+                }
+                // If not found, rethrow original exception for visibility
+                throw;
+            }
         }
 
         private async Task _DeleteUserWordWithCleanup(UserWord userWord)
@@ -447,6 +738,75 @@ namespace NewWords.Api.Services
             // Note: today and yesterday are now included in dayIntervals with proper filtering
 
             return timestamps.OrderBy(t => t).ToArray();
+        }
+
+        public async Task<Models.DTOs.Vocabulary.ExplanationsResponse> GetAllExplanationsForWordAsync(
+            int userId,
+            long wordCollectionId,
+            string learningLanguage,
+            string explanationLanguage)
+        {
+            // Get all explanations for this word
+            var explanations = await wordExplanationRepository.GetListAsync(we =>
+                we.WordCollectionId == wordCollectionId &&
+                we.LearningLanguage == learningLanguage &&
+                we.ExplanationLanguage == explanationLanguage);
+
+            // Order by creation time (newest first)
+            var orderedExplanations = explanations
+                .OrderByDescending(e => e.CreatedAt)
+                .ToList();
+
+            logger.LogInformation($"Found {orderedExplanations.Count} explanations for word collection {wordCollectionId}");
+
+            // Get user's default explanation ID
+            var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
+                uw.UserId == userId &&
+                uw.WordCollectionId == wordCollectionId);
+
+            return new Models.DTOs.Vocabulary.ExplanationsResponse
+            {
+                Explanations = orderedExplanations,
+                UserDefaultExplanationId = userWord?.WordExplanationId
+            };
+        }
+
+        public async Task SwitchUserDefaultExplanationAsync(
+            int userId,
+            long wordCollectionId,
+            long newExplanationId)
+        {
+            // Validate: explanation exists and matches word collection
+            var explanation = await wordExplanationRepository.GetFirstOrDefaultAsync(we => we.Id == newExplanationId);
+            if (explanation == null)
+            {
+                logger.LogWarning($"Explanation not found - ExplanationId: {newExplanationId}");
+                throw new ArgumentException("Explanation not found");
+            }
+
+            if (explanation.WordCollectionId != wordCollectionId)
+            {
+                logger.LogWarning($"Explanation {newExplanationId} does not belong to word collection {wordCollectionId}");
+                throw new InvalidOperationException("Explanation does not belong to this word");
+            }
+
+            // Update user's default
+            var userWord = await userWordRepository.GetFirstOrDefaultAsync(uw =>
+                uw.UserId == userId &&
+                uw.WordCollectionId == wordCollectionId);
+
+            if (userWord == null)
+            {
+                logger.LogWarning($"User word not found - UserId: {userId}, WordCollectionId: {wordCollectionId}");
+                throw new ArgumentException("User word not found");
+            }
+
+            userWord.WordExplanationId = newExplanationId;
+            userWord.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            await userWordRepository.UpdateAsync(userWord);
+
+            logger.LogInformation($"Switched default explanation for user {userId}, word collection {wordCollectionId} to explanation {newExplanationId}");
         }
     }
 }
