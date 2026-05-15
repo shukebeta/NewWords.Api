@@ -1,0 +1,83 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedCorsOrigins": [
+    "http://localhost:37387"
+  ],
+  "Jwt": {
+    "Issuer": "https://yourdomain.com",
+    "SymmetricSecurityKey": "YOUR_SUPER_SECRET_KEY_REPLACE_THIS_WITH_A_LONG_RANDOM_STRING_AND_STORE_SECURELY"
+  },
+  "Agents":[
+    {
+      "Provider":"openrouter",
+      "BaseUrl":"https://openrouter.ai/api/v1",
+      "ApiKey":"your-openrouter-api-key",
+      "Models":[
+        "google/gemma-4-26b-a4b-it",
+        "anthropic/claude-3.5-haiku"
+      ]
+    }
+  ],
+  "Explanation": {
+    "PreferredModels": [
+      "google/gemma-4-26b-a4b-it",
+      "anthropic/claude-3.5-haiku"
+    ]
+  },
+  "GooglePlay": {
+    "PackageName": "com.shukebeta.newwords.local",
+    "ServiceAccountKeyPath": "./google-play-service-account-dev.json",
+    "ApplicationName": "NewWords API Local Development",
+    "TestMode": true
+  },
+  "Subscription": {
+    "Products": {
+      "monthly_premium": {
+        "tier": "Monthly",
+        "name": "Monthly Premium Local",
+        "duration": 30
+      },
+      "yearly_premium": {
+        "tier": "Yearly",
+        "name": "Yearly Premium Local",
+        "duration": 365
+      },
+      "lifetime_premium": {
+        "tier": "Lifetime",
+        "name": "Lifetime Premium Local",
+        "duration": null
+      }
+    },
+    "FreeWordLimit": 10,
+    "CacheExpiryMinutes": 1,
+    "VerificationIntervalHours": 1
+  },
+  "Testing": {
+    "GooglePlayTestMode": true,
+    "MockGooglePlayResponses": true,
+    "TestUserIds": [1, 2, 3, 999],
+    "TestPurchaseTokens": {
+      "valid_monthly": "test_monthly_token_valid_123",
+      "valid_yearly": "test_yearly_token_valid_456",
+      "invalid_token": "test_invalid_token_789",
+      "expired_token": "test_expired_token_000"
+    }
+  },
+  "SeqApiKey": "YOUR_SEQ_API_KEY_HERE",
+  "SeqServerUrl": "http://localhost:5341",
+  "Redis": {
+    "ConnectionString": "localhost:6379",
+    "Database": 0,
+    "ProjectPrefix": "newwords.api"
+  },
+  "DatabaseConnectionOptions": {
+    "ConnectionString": "server=127.0.0.1; port=3306; uid=newwords; password=newwordspw; database=newwords; charset=utf8mb4;",
+    "DbType":"MySql",
+    "ApplicationName": "NewWords"
+  }
+}

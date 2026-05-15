@@ -3,6 +3,10 @@
 An application that helps people learn new words in foreign languages
 你的词汇教练
 
+## Local Development
+
+For local development setup with Docker Compose (MySQL, Redis, Seq), see [README.development.md](README.development.md).
+
 这是一个帮你更快掌握一门外语的一个App：它记录你的生词，帮助你记住它的拼写、发音，以及更重要的，用法。
 
 你不需要一个长长的生词表。你应该尽量把新加入的生词在一个月内把它从生词表里挪走，也就是说牢固的记住它，它对你不再是一个生词。

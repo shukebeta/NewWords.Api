@@ -71,6 +71,12 @@ namespace NewWords.Api.Entities
         public long CreatedAt { get; set; }
 
         /// <summary>
+        /// Timestamp from UserWord.UpdatedAt for sorting and API response (not a database column).
+        /// </summary>
+        [SugarColumn(IsIgnore = true)]
+        public long UpdatedAt { get; set; }
+
+        /// <summary>
         /// Identifier of the LLM model used for generation (e.g., "openrouter:meta-llama/llama-4-scout:free"). Nullable.
         /// </summary>
         [SugarColumn(IsNullable = true, Length = 100)]
