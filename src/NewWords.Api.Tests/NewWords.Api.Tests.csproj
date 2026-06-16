@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -16,16 +16,16 @@
     <PackageReference Include="NSubstitute" Version="5.1.0" />
     <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.16" />
     <PackageReference Include="FluentAssertions" Version="8.6.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.*" />
     <PackageReference Include="Coverlet.collector" Version="6.0.0" />
-    <PackageReference Include="SqlSugarCore" Version="5.1.4.189" />
+    <PackageReference Include="SqlSugarCore" Version="5.1.4.214" />
     <PackageReference Include="Google.Apis.AndroidPublisher.v3" Version="1.68.0.3422" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NewWords.Api\NewWords.Api.csproj" />
-    <PackageReference Include="Shukebeta.Api.Framework" Version="1.0.0" />
+    <PackageReference Include="Shukebeta.Api.Framework" Version="2.0.0" />
     <ProjectReference Include="..\LLM\LLM.csproj" />
   </ItemGroup>
 

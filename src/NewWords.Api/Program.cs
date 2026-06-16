@@ -8,7 +8,7 @@ using Api.Framework.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using NewWords.Api.Extensions;
 using NewWords.Api.Models.DTOs;
 using NLog.Web;
@@ -40,7 +40,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddCors(SetupCors(builder));
 ConfigAuthentication(builder);
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAutoMapper(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile));
+builder.Services.AddAutoMapper(cfg => cfg.AddMaps(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile)));
 builder.Services.RegisterServices();
 
 var app = builder.Build();
@@ -108,18 +108,11 @@ Action<SwaggerGenOptions> SetupSwaggerGen()
             In = ParameterLocation.Header,
             Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token in the text input below.\nExample: \"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwO\"",
         });
-        c.AddSecurityRequirement(new OpenApiSecurityRequirement
+        c.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
         {
             {
-                new OpenApiSecurityScheme
-                {
-                    Reference = new OpenApiReference
-                    {
-                        Type = ReferenceType.SecurityScheme,
-                        Id = "Bearer"
-                    }
-                },
-                new string[] { }
+                new OpenApiSecuritySchemeReference("Bearer"),
+                new List<string>()
             }
         });
     };
