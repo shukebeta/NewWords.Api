@@ -40,7 +40,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddCors(SetupCors(builder));
 ConfigAuthentication(builder);
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAutoMapper(cfg => cfg.AddMaps(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile)));
+builder.Services.AddAutoMapper(typeof(NewWords.Api.MappingProfiles.SettingsMappingProfile));
 builder.Services.RegisterServices();
 
 var app = builder.Build();
